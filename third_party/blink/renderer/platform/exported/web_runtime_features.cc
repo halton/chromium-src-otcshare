@@ -477,6 +477,10 @@ void WebRuntimeFeatures::EnableWebXRAnchors(bool enable) {
   RuntimeEnabledFeatures::SetWebXRAnchorsEnabled(enable);
 }
 
+void WebRuntimeFeatures::EnableWebML(bool enable) {
+  RuntimeEnabledFeatures::SetWebMLEnabled(enable);
+}
+
 void WebRuntimeFeatures::EnableWebXRHitTest(bool enable) {
   RuntimeEnabledFeatures::SetWebXRHitTestEnabled(enable);
 }
