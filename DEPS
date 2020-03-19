@@ -1503,7 +1503,7 @@ deps = {
   },
 
   'src/third_party/libinference_engine/dldt': {
-    'url': 'https://github.com/fujunwei/dldt.git@d44125d5f2226ca8a4616578aec9231f90408280',
+    'url': 'https://github.com/fujunwei/dldt.git@ad45b62a4aca7153c3632a6b1298ffea36dffa0c',
     'condition': 'checkout_linux or checkout_win',
   },
 
