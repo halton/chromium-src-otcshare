@@ -247,12 +247,13 @@ source_set("lib") {
     "//services/service_manager/public/cpp",
   ]
 
-  if (is_linux) {
+  if (is_linux || is_win) {
     deps += [
       ":ie",
       "//third_party/libinference_engine:libMKLDNNPlugin",
       "//third_party/libinference_engine:libclDNNPlugin",
       "//third_party/libinference_engine:libinference_engine",
+      "//third_party/libinference_engine:libGNAPlugin",
     ]
 
     if (enable_ie_myriad) {

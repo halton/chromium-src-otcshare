@@ -7,8 +7,10 @@
 #include <string>
 #include <utility>
 
+#include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
 #include "services/ml/execution_impl_ie.h"
+#include "services/ml/ml_switches.h"
 #include "third_party/libinference_engine/dldt/inference-engine/include/ie_builders.hpp"
 #include "third_party/libinference_engine/dldt/inference-engine/include/ie_utils.hpp"
 #include "third_party/libinference_engine/dldt/inference-engine/include/inference_engine.hpp"
@@ -106,7 +108,18 @@ int32_t CompilationDelegateIe::Compile() {
 int32_t CompilationDelegateIe::CreateExecution(
     std::unique_ptr<mojom::Execution>& execution,
     mojom::ExecutionInitParamsPtr params) {
-  execution = std::make_unique<ExecutionImplIe>(this, std::move(params));
+  float input_scale = 1.0;
+  if (compilation_->GetPreference() == mojom::PREFER_ULTRA_LOW_POWER) {
+    const mojom::ModelInfoPtr& model = compilation_->GetModel();
+    if (model->inputs.size() != 1) {
+      LOG(ERROR) << "GNA plugin only support one input.";
+      return mojom::OP_FAILED;
+    }
+    int index = model->inputs[0];
+    input_scale = model->operands[index]->scale;
+  }
+  execution =
+      std::make_unique<ExecutionImplIe>(this, std::move(params), input_scale);
   return static_cast<ExecutionImplIe*>(execution.get())
       ->Init(compilation_->GetPreference());
 }
@@ -163,6 +176,8 @@ int32_t CompilationDelegateIe::BuildNetwork() {
       result = AddFullyConnected(operation);
     } else if (type == mojom::RESIZE_BILINEAR) {
       result = AddResizeBilinear(operation);
+    } else if (type == mojom::LOGISTIC) {
+      result = AddSigmoid(operation);
     } else {
       LOG(ERROR) << "Operation type " << type << " is not supported.";
       return mojom::BAD_DATA;
@@ -321,16 +336,19 @@ int32_t CompilationDelegateIe::CreateBlob(
       return result;
     }
     int32_t pref = compilation_->GetPreference();
-    if (pref != mojom::PREFER_LOW_POWER) {
+    // GNA also only support FP32 representing with PREFER_ULTRA_LOW_POWER.
+    bool fp32_precision = pref != mojom::PREFER_LOW_POWER;
+    if (fp32_precision) {
+      // GNA only accepts FP32 precision, cpu/gpu use FP32 currently.
       blob = ie::make_shared_blob<float>(ie::Precision::FP32, dims);
     } else {
-      // MYRIAD only accepts FP16 precision
+      // MYRIAD only accepts FP16 precision.
       blob = ie::make_shared_blob<int16_t>(ie::Precision::FP16, dims);
     }
     blob->allocate();
     DLOG(INFO) << "Create blob with size " << blob->size()
                << " for operand index " << index;
-    if (pref != mojom::PREFER_LOW_POWER) {
+    if (fp32_precision) {
       float* dst = blob->buffer().as<float*>();
       auto mapping = compilation_->MapMemory(index);
       const float* src = reinterpret_cast<const float*>(mapping.get());
@@ -900,6 +918,32 @@ int32_t CompilationDelegateIe::AddResizeBilinear(
 
   LOG(ERROR) << "Operation type " << operation->type << " is not supported.";
   return mojom::BAD_DATA;
+}
+
+int32_t CompilationDelegateIe::AddSigmoid(
+    const mojom::OperationPtr& operation) {
+  const uint32_t input_index = operation->inputs[0];
+  if (layer_id_map_.find(input_index) == layer_id_map_.end()) {
+    LOG(ERROR) << "The layer for operand index " << input_index
+               << " is not ready";
+    return mojom::BAD_DATA;
+  }
+  try {
+    const uint32_t output_index = operation->outputs[0];
+    std::string name(base::NumberToString(output_index));
+    const size_t input_layer_id = layer_id_map_[input_index];
+    DLOG(INFO) << "[IE] input port layer id " << input_layer_id
+               << " for operand index " << input_index;
+    size_t layer_id =
+        builder_->addLayer({{input_layer_id}}, ie::Builder::SigmoidLayer(name));
+    layer_id_map_[output_index] = layer_id;
+    DLOG(INFO) << "[IE] succeed to add sigmoid layer id " << layer_id
+               << " for output operand index " << output_index;
+  } catch (const std::exception& ex) {
+    LOG(ERROR) << "[IE] failed to add sigmoid layer " << ex.what();
+    return mojom::OP_FAILED;
+  }
+  return mojom::NOT_ERROR;
 }
 
 }  // namespace ml

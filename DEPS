@@ -1503,13 +1503,13 @@ deps = {
   },
 
   'src/third_party/libinference_engine/dldt': {
-    'url': 'https://github.com/fujunwei/dldt.git@d44125d5f2226ca8a4616578aec9231f90408280',
-    'condition': 'checkout_linux',
+    'url': 'https://github.com/fujunwei/dldt.git@ad45b62a4aca7153c3632a6b1298ffea36dffa0c',
+    'condition': 'checkout_linux or checkout_win',
   },
 
   'src/third_party/libinference_engine/dldt/inference-engine/thirdparty/ade': {
     'url': 'https://github.com/opencv/ade.git@cbe2db61a659c2cc304c3837406f95c39dfa938e',
-    'condition': 'checkout_linux',
+    'condition': 'checkout_linux or checkout_win',
   },
 
   # === ANDROID_DEPS Generated Code Start ===
