@@ -245,6 +245,11 @@ stage_install_common() {
     fi
   fi
 
+  # ie nn c api
+  #if [ -f "${BUILDDIR}/libie_nn_c_api.so" ]; then
+  #  install -m ${SHLIB_PERMS} "${BUILDDIR}/libie_nn_c_api.so" "${STAGEDIR}/${INSTALLDIR}/"
+  #fi
+
   # ANGLE
   if [ -f "${BUILDDIR}/libEGL.so" ]; then
     if [ "${CHANNEL}" != "stable" ]; then
