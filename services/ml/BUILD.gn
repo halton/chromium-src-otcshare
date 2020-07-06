@@ -8,57 +8,18 @@ if (is_win) {
   cldnn_dll = "clDNN64.dll"
   dnnl_dll = "dnnl.dll"
   omp_dll = "vcomp140.dll"
+  ie_nn_dll = "ie_nn_c_api.dll"
   os_folder = "Windows64"
 } else if (is_linux) {
   cldnn_dll = "libclDNN64.so"
   dnnl_dll = "libdnnl.so"
   omp_dll = "libiomp5.so"
+  ie_nn_dll = "libie_nn_c_api.so"
   os_folder = "Linux64"
 } else if (is_mac) {
   dnnl_dll = "libdnnl.1.2.dylib"
   omp_dll = "libiomp5.dylib"
   os_folder = "Mac64"
-}
-
-source_set("ie") {
-  sources = [
-    # Compile the ie_rtti.cpp in order to link TBlob<T, U>::~TBlob().
-    "//third_party/libinference_engine/dldt/inference-engine/src/inference_engine/ie_rtti.cpp",
-    "compilation_delegate_ie.cc",
-    "compilation_delegate_ie.h",
-    "execution_impl_ie.cc",
-    "execution_impl_ie.h",
-  ]
-  include_dirs =
-      [ "//third_party/libinference_engine/dldt/inference-engine/include/" ]
-
-  configs -= [ "//build/config/compiler:no_exceptions" ]
-  configs += [ "//build/config/compiler:exceptions" ]
-  configs -= [ "//build/config/compiler:no_rtti" ]
-  configs += [ "//build/config/compiler:rtti" ]
-
-  # Add -Wno-dllexport-explicit-instantiation-decl in order to compile ie_rtti.cpp.
-  cflags_cc = [
-    "-Wno-deprecated-declarations",
-    "-Wno-dllexport-explicit-instantiation-decl",
-    "-Wno-pessimizing-move",
-    "-Wno-extra-semi",
-    "-Wno-defaulted-function-deleted",
-  ]
-
-  # Define the _API in order to compile ie_rtti.cpp.
-  defines = [ "IMPLEMENT_INFERENCE_ENGINE_API" ]
-
-  deps = [
-    "//services/ml/public/mojom",
-    "//third_party/libinference_engine:libGNAPlugin",
-    "//third_party/libinference_engine:libMKLDNNPlugin",
-    "//third_party/libinference_engine:libclDNNPlugin",
-    "//third_party/libinference_engine:libinference_engine",
-  ]
-  if (is_linux) {
-    deps += [ "//third_party/libinference_engine:libmyriadPlugin" ]
-  }
 }
 
 source_set("lib") {
@@ -98,14 +59,14 @@ source_set("lib") {
     ]
   } else if (is_android) {
     sources += [
-      "compilation_impl_android.cc",
-      "compilation_impl_android.h",
-      "execution_impl_android.cc",
-      "execution_impl_android.h",
-      "model_impl_android.cc",
-      "model_impl_android.h",
-      "neural_network_impl_android.cc",
-      "neural_network_impl_android.h",
+      "compilation_impl_nn.cc",
+      "compilation_impl_nn.h",
+      "execution_impl_nn.cc",
+      "execution_impl_nn.h",
+      "model_impl_nn.cc",
+      "model_impl_nn.h",
+      "neural_network_impl_nn.cc",
+      "neural_network_impl_nn.h",
     ]
 
     #include_dirs = [ "${android_ndk_root}/sysroot/usr/include" ]
@@ -243,6 +204,7 @@ source_set("lib") {
     deps += [
       ":copy_cldnn_dll",
       ":copy_dnnl_dll",
+      ":copy_ie_nn_dll",
       ":copy_omp_dll",
     ]
   } else if (is_mac) {
@@ -259,7 +221,18 @@ source_set("lib") {
   ]
 
   if (is_linux || is_win) {
-    deps += [ ":ie" ]
+    sources += [
+      "compilation_impl_nn.cc",
+      "compilation_impl_nn.h",
+      "execution_impl_nn.cc",
+      "execution_impl_nn.h",
+      "ienn_symbol_table.cc",
+      "ienn_symbol_table.h",
+      "model_impl_nn.cc",
+      "model_impl_nn.h",
+      "neural_network_impl_nn.cc",
+      "neural_network_impl_nn.h",
+    ]
   }
 }
 
@@ -286,6 +259,15 @@ if (is_win || is_linux || is_mac) {
     copy("copy_cldnn_dll") {
       sources = [
         "${cldnn_dll_path}/${cldnn_dll}",
+      ]
+      outputs = [
+        "$root_out_dir/{{source_file_part}}",
+      ]
+    }
+    ie_nn_dll_path = "//third_party/ienn/lib/${os_folder}"
+    copy("copy_ie_nn_dll") {
+      sources = [
+        "${ie_nn_dll_path}/${ie_nn_dll}",
       ]
       outputs = [
         "$root_out_dir/{{source_file_part}}",
