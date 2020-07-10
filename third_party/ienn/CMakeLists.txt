@@ -112,7 +112,6 @@ if(IE_NOT_FOUND_MESSAGE)
 else()
     find_package(InferenceEngine 2.1 REQUIRED)
 endif()
-
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src")
     add_subdirectory(src)
 endif()
