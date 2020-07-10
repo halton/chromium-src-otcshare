@@ -14,15 +14,15 @@ file(GLOB HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/*.h)
 
 add_library(${TARGET_NAME} SHARED ${HEADERS} ${SOURCES})
 
-target_link_libraries(${TARGET_NAME} PRIVATE ${InferenceEngine_LIBRARIES})
+find_package(ngraph REQUIRED)
+
+target_link_libraries(${TARGET_NAME} PRIVATE ${InferenceEngine_LIBRARIES} ${NGRAPH_LIBRARIES})
 
 target_include_directories(${TARGET_NAME} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${InferenceEngine_INCLUDE_DIRS}")
 
 #add_cpplint_target(${TARGET_NAME}_cpplint FOR_TARGETS ${TARGET_NAME})
 
-
 MESSAGE( STATUS "==============this var key = ${InferenceEngine_INCLUDE_DIRS}.")
-
 # export
 
 export(TARGETS ${TARGET_NAME} NAMESPACE IE:: APPEND FILE "${CMAKE_BINARY_DIR}/targets.cmake")

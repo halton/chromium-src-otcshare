@@ -123,6 +123,10 @@ int32_t Execution::StartCompute() {
             ? s_gna_infer_request.get()
             : infer_request_.get();
     ModelInfoPtr model = compilation_->model_;
+
+    InputsDataMap inputInfo = compilation_->network_->getInputsInfo();
+    auto inputInfoItem = inputInfo.begin();
+
     for (size_t i = 0; i < model->inputs.size(); ++i) {
       size_t index = model->inputs[i];
       const Operand& operand = model->operands[index];
@@ -133,22 +137,26 @@ int32_t Execution::StartCompute() {
         std::cout << "Only TENSOR_FLOAT32 operand type is supported";
         return error_t::BAD_DATA;
       }
-
-      std::string input_id = std::to_string(index);
-      Blob::Ptr input_blob = infer_request->GetBlob(input_id);
+      Blob::Ptr input_blob = infer_request->GetBlob(inputInfoItem->first);
+      inputInfoItem ++;
 
       float* dst = input_blob->buffer()
                        .as<PrecisionTrait<Precision::FP32>::value_type*>();
       const float* src = reinterpret_cast<const float*>(input_data_[i].buffer);
-      if (operand.dimensions.size() == 3) {
-        // Only reorder HWC to CHW
-        result = Reorder<float>(dst, src, operand.dimensions);
-        if (result != error_t::NOT_ERROR)
-          return error_t::BAD_DATA;
-      } else {
-        const size_t length = product(operand.dimensions) * sizeof(float);
-        memcpy(static_cast<void*>(dst), static_cast<const void*>(src), length);
-      }
+      // Not sure that whether these codes below are needed to support certain
+      // cases if (operand.dimensions.size() == 3) {
+      //   // Only reorder HWC to CHW
+      //   result = Reorder<float>(dst, src, operand.dimensions);
+      //   if (result != error_t::NOT_ERROR)
+      //     return error_t::BAD_DATA;
+      // } else {
+      //   const size_t length = product(operand.dimensions) * sizeof(float);
+      //   memcpy(static_cast<void*>(dst), static_cast<const void*>(src),
+      //   length);
+      // }
+
+      memcpy(static_cast<void*>(dst), static_cast<const void*>(src),
+             product(operand.dimensions) * sizeof(float));
     }
 
     infer_request->Infer();
@@ -161,8 +169,11 @@ int32_t Execution::StartCompute() {
       ;
       total_length += length;
       void* mapping = output_data_[i].buffer;
-      std::string output_id = std::to_string(index);
-      const Blob::Ptr output_blob = infer_request->GetBlob(output_id);
+
+      OutputsDataMap outputInfo = compilation_->network_->getOutputsInfo();
+      auto outputInfoItem = outputInfo.begin();
+      Blob::Ptr output_blob = infer_request->GetBlob(outputInfoItem->first);
+      outputInfoItem ++;
       if (operand.dimensions.size() == 3) {
         const float* src =
             output_blob->buffer()

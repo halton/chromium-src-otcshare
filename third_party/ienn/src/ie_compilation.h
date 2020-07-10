@@ -10,14 +10,25 @@
 #include <string>
 #include <vector>
 
-#include <ie_builders.hpp>
 #include <inference_engine.hpp>
 #include "constants.h"
 #include "ie_nn_c_api.h"
+#include "ngraph/node_output.hpp"
 #include "utils.h"
 
-namespace InferenceEngine {
+namespace ngraph {
+class Function;
+class Node;
+class Output<ngraph::Node>;
+namespace op {
+namespace v0 {
+class Parameter;
+class Result;
+}  // namespace v0
+}  // namespace op
+}  // namespace ngraph
 
+namespace InferenceEngine {
 static float asfloat(uint32_t v) {
   union {
     float f;
@@ -149,11 +160,11 @@ class Compilation {
   int32_t GetPreference();
 
  private:
-  int32_t CreateBlob(uint32_t index,
-                     std::shared_ptr<InferenceEngine::Blob>& blob);
+  int32_t AddConstant(uint32_t index,
+                      std::vector<size_t> group_conv_weights_dims = {});
   int32_t AddInput(uint32_t index);
   int32_t AddOutput(uint32_t index);
-  int32_t AddConstant(uint32_t index);
+  int32_t AddBiasWithBroadcasting(uint32_t bias_index, uint32_t output_index);
   int32_t AddActivationByFusedCode(int32_t fuse_code,
                                    size_t input_layer,
                                    const std::string& name,
@@ -174,10 +185,10 @@ class Compilation {
   ModelInfoPtr model_;
   int32_t preference_;
 
-  std::unique_ptr<Builder::Network> builder_;
   std::unique_ptr<CNNNetwork> network_;
-
-  std::map<uint32_t, size_t> layer_id_map_;
+  std::map<uint32_t, ngraph::Output<ngraph::Node>> index_op_map_;
+  std::vector<std::shared_ptr<ngraph::op::v0::Parameter>> ngraph_inputs_;
+  std::vector<std::shared_ptr<ngraph::op::v0::Result>> ngraph_outputs_;
 
   DISALLOW_COPY_AND_ASSIGN(Compilation);
 };
