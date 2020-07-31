@@ -179,13 +179,14 @@ void ModelImplNN::Finish(mojom::ModelInfoPtr model_info,
     DLOG(INFO) << "  operation[" << i << "]";
     const mojom::OperationPtr& operation = model_info->operations[i];
 
+#if defined(OS_ANDROID)
     if (operation->type == mojom::RESIZE_BILINEAR &&
-        operation->inputs.size() == 4) {
+		     operation->inputs.size() == 4) {
       LOG(WARNING) << "    discard align_corners(" << operation->inputs[3]
                    << ")";
       operation->inputs.pop_back();
     }
-
+#endif
     result =
         AddOperation(operation->type, operation->inputs, operation->outputs);
     if (result != 0) {

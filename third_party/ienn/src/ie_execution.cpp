@@ -143,47 +143,51 @@ int32_t Execution::StartCompute() {
       float* dst = input_blob->buffer()
                        .as<PrecisionTrait<Precision::FP32>::value_type*>();
       const float* src = reinterpret_cast<const float*>(input_data_[i].buffer);
-      // Not sure that whether these codes below are needed to support certain
-      // cases if (operand.dimensions.size() == 3) {
-      //   // Only reorder HWC to CHW
-      //   result = Reorder<float>(dst, src, operand.dimensions);
-      //   if (result != error_t::NOT_ERROR)
-      //     return error_t::BAD_DATA;
-      // } else {
-      //   const size_t length = product(operand.dimensions) * sizeof(float);
-      //   memcpy(static_cast<void*>(dst), static_cast<const void*>(src),
-      //   length);
-      // }
-
-      memcpy(static_cast<void*>(dst), static_cast<const void*>(src),
-             product(operand.dimensions) * sizeof(float));
+      // ngraph can't support setLayout of hwc
+      // so we need to reorder hwc=>chw
+      if (operand.dimensions.size() == 3) {
+        // Only reorder HWC to CHW
+        result = Reorder<float>(dst, src, operand.dimensions);
+        if (result != error_t::NOT_ERROR) {
+          return error_t::BAD_DATA;
+        }
+      } else {
+        const size_t length = product(operand.dimensions) * sizeof(float);
+        memcpy(static_cast<void*>(dst), static_cast<const void*>(src), length);
+      }
     }
 
     infer_request->Infer();
-
+    OutputsDataMap outputInfo = compilation_->network_->getOutputsInfo();
+    auto outputInfoItem = outputInfo.begin();
     for (size_t i = 0; i < model->outputs.size(); ++i) {
       uint32_t index = model->outputs[i];
       const Operand& operand = model->operands[index];
-      const uint32_t offset = total_length;
+      uint32_t offset = total_length;
       const uint32_t length = output_data_[i].length;
-      ;
       total_length += length;
       void* mapping = output_data_[i].buffer;
-
-      OutputsDataMap outputInfo = compilation_->network_->getOutputsInfo();
-      auto outputInfoItem = outputInfo.begin();
       Blob::Ptr output_blob = infer_request->GetBlob(outputInfoItem->first);
-      outputInfoItem ++;
+
+      // ngraph can't support setLayout of hwc
+      // so we need to reorder chw=>hwc
       if (operand.dimensions.size() == 3) {
         const float* src =
             output_blob->buffer()
                 .as<PrecisionTrait<Precision::FP32>::value_type*>();
+        std::vector<uint32_t> dims(operand.dimensions);
+        // Since polyfill only support 3D output for argmax
+        // and the layout of the 3D output is nhw
+        // so we need to reshape nhw to original nhwc
+        if (outputInfoItem->first.find("TopK") != std::string::npos) {
+          dims.push_back(1);
+        }
         if (operand.type == data_t::TENSOR_FLOAT32) {
           float* dst = reinterpret_cast<float*>(mapping);
-          result = Reorder<float>(dst, src, operand.dimensions, false);
+          result = Reorder<float>(dst, src, dims, false);
         } else if (operand.type == data_t::TENSOR_INT32) {
           int32_t* dst = reinterpret_cast<int32_t*>(mapping);
-          result = Reorder<int32_t>(dst, src, operand.dimensions, false);
+          result = Reorder<int32_t>(dst, src, dims, false);
         }
         if (result != error_t::NOT_ERROR) {
           return error_t::BAD_DATA;
@@ -191,6 +195,7 @@ int32_t Execution::StartCompute() {
       } else {
         memcpy(mapping, output_blob->buffer(), length);
       }
+      outputInfoItem++;
     }
   } catch (const std::exception& ex) {
     std::cout << "[IE] exception " << ex.what();
