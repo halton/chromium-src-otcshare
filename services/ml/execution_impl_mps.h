@@ -9,9 +9,9 @@
 #import <Metal/MTLCommandBuffer.h>
 #include <map>
 #include <memory>
+#include <os/availability.h>
 #include <vector>
 
-#include "base/mac/availability.h"
 #include "base/mac/scoped_nsobject.h"
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"

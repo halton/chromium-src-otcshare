@@ -136,7 +136,7 @@ source_set("lib") {
       "opengl_metal_mac/vertex_shader.h",
     ]
 
-    libs = [
+    frameworks = [
       "Accelerate.framework",
       "Metal.framework",
       "MetalPerformanceShaders.framework",

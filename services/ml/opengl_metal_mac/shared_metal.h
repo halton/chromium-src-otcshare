@@ -24,8 +24,8 @@
 #define SERVICES_ML_OPENGL_METAL_MAC_SHARED_METAL_H_
 
 #import <Foundation/Foundation.h>
+#include <os/availability.h>
 
-#include "base/mac/availability.h"
 #import "interoperable_texture.h"
 
 API_AVAILABLE(macosx(10.13))

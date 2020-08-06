@@ -26,8 +26,7 @@
 #import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
-
-#include "base/mac/availability.h"
+#include <os/availability.h>
 
 // Implemenation of class representing a texture shared between OpenGL and
 // Metal.

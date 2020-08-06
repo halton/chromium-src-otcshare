@@ -5,7 +5,6 @@
 #include "services/ml/compilation_delegate_mps.h"
 
 #include "base/logging.h"
-#include "base/mac/availability.h"
 #include "base/mac/sdk_forward_declarations.h"
 #include "services/ml/common.h"
 #include "services/ml/ml_utils_mac.h"

@@ -25,8 +25,7 @@
 #include <CoreGraphics/CoreGraphics.h>
 #import <Foundation/Foundation.h>
 #import <GLKit/GLKTextureLoader.h>
-
-#include "base/mac/availability.h"
+#include <os/availability.h>
 
 API_AVAILABLE(macosx(10.13))
 @interface OpenGLRenderer : NSObject
