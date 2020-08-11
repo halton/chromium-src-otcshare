@@ -42,6 +42,22 @@ int32_t ConvertDims(const std::vector<uint32_t>& dimensions,
   }
   return error_t::NOT_ERROR;
 }
+
+std::shared_ptr<ngraph::Node> AddActivationByFusedCode(
+    int32_t fuse_code,
+    std::shared_ptr<ngraph::Node> input_node) {
+  std::shared_ptr<ngraph::Node> activation_node;
+  if (fuse_code == fuse_t::FUSED_RELU) {
+    activation_node = std::make_shared<op::v0::Relu>(input_node->output(0));
+  } else if (fuse_code == fuse_t::FUSED_RELU1) {
+    activation_node = std::make_shared<op::v0::Clamp>(input_node->output(0), -1.0, 1.0);
+  } else if (fuse_code == fuse_t::FUSED_RELU6) {
+    activation_node = std::make_shared<op::v0::Clamp>(input_node->output(0), 0.0, 6.0);
+  } else if (fuse_code == fuse_t::FUSED_NONE) {
+    return input_node;
+  }
+  return activation_node;
+}
 }  // namespace
 
 Compilation::Compilation(ModelInfoPtr model)
@@ -81,23 +97,23 @@ int32_t Compilation::Compile() {
                type == operation_t::ATROUS_CONV_2D ||
                type == operation_t::ATROUS_DEPTHWISE_CONV_2D) {
       result = AddConvolution(operation);
-      // } else if (type == operation_t::AVERAGE_POOL_2D ||
-      //            type == operation_t::MAX_POOL_2D) {
-      //   result = AddPooling(operation);
-      // } else if (type == operation_t::SOFTMAX) {
-      //   result = AddSoftmax(operation);
+    } else if (type == operation_t::AVERAGE_POOL_2D ||
+               type == operation_t::MAX_POOL_2D) {
+      result = AddPooling(operation);
+    } else if (type == operation_t::SOFTMAX) {
+      result = AddSoftmax(operation);
     } else if (type == operation_t::RESHAPE) {
       result = AddReshape(operation);
-      // } else if (type == operation_t::CONCATENATION) {
-      //   result = AddConcatenation(operation);
+    } else if (type == operation_t::CONCATENATION) {
+      result = AddConcatenation(operation);
     } else if (type == operation_t::FULLY_CONNECTED) {
       result = AddFullyConnected(operation);
-      // } else if (type == operation_t::RESIZE_BILINEAR_NN) {
-      //   result = AddResizeBilinear(operation);
+    } else if (type == operation_t::RESIZE_BILINEAR_NN) {
+      result = AddResizeBilinear(operation);
     } else if (type == operation_t::LOGISTIC) {
       result = AddSigmoid(operation);
-      // } else if (type == operation_t::ARGMAX) {
-      //   result = AddArgmax(operation);
+    } else if (type == operation_t::ARGMAX) {
+      result = AddArgmax(operation);
     } else {
       std::cout << "Operation type " << type << " is not supported."
                 << std::endl;
@@ -233,33 +249,6 @@ int32_t Compilation::AddConstant(uint32_t index,
   return error_t::NOT_ERROR;
 }
 
-// int32_t Compilation::AddActivationByFusedCode(int32_t fuse_code,
-//                                               size_t input_layer,
-//                                               const std::string& name,
-//                                               size_t& activiation_layer_id) {
-//   try {
-//     if (fuse_code == FUSED_RELU) {
-//       activiation_layer_id =
-//           builder_->addLayer({{input_layer}}, Builder::ReLULayer(name));
-//     } else if (fuse_code == FUSED_RELU1) {
-//       activiation_layer_id = builder_->addLayer(
-//           {{input_layer}},
-//           Builder::ClampLayer(name).setMinValue(-1.0).setMaxValue(1.0));
-//     } else if (fuse_code == FUSED_RELU6) {
-//       activiation_layer_id = builder_->addLayer(
-//           {{input_layer}},
-//           Builder::ClampLayer(name).setMinValue(0.0).setMaxValue(6.0));
-//     } else {
-//       std::cout << "Fuse code " << fuse_code << " is not supported";
-//       return error_t::BAD_DATA;
-//     }
-//   } catch (const std::exception& ex) {
-//     std::cout << "[IE] failed to add relu layer " << ex.what();
-//     return error_t::OP_FAILED;
-//   }
-//   return error_t::NOT_ERROR;
-// }
-
 int32_t Compilation::AddElementwise(const Operation& operation) {
   // Setup element-wise parameters.
   ElementWiseParams params;
@@ -289,7 +278,8 @@ int32_t Compilation::AddElementwise(const Operation& operation) {
       return error_t::BAD_DATA;
     }
     const uint32_t output_index = operation.outputs[0];
-    index_op_map_[output_index] = elementwise_node->output(0);
+    index_op_map_[output_index] =
+        AddActivationByFusedCode(params.fuse_code, elementwise_node)->output(0);
   } catch (const std::exception& ex) {
     std::cout << "[IE] failed to add elementwise layer " << ex.what();
     return error_t::OP_FAILED;
@@ -355,92 +345,86 @@ int32_t Compilation::AddConvolution(const Operation& operation) {
     AddBiasWithBroadcasting(bias_index, output_index);
     auto add_node = std::make_shared<op::v1::Add>(conv_node->output(0),
                                                   index_op_map_[bias_index]);
-    index_op_map_[output_index] = add_node->output(0);
+    index_op_map_[output_index] =
+        AddActivationByFusedCode(params.fuse_code, add_node)->output(0);
   } catch (const std::exception& ex) {
-    std::cout << "[IE] failed to add Convolution layer " << ex.what();
+    std::cout << "[IE] failed to add pooling layer " << ex.what();
     return error_t::OP_FAILED;
   }
   return error_t::NOT_ERROR;
 }
 
-// int32_t Compilation::AddPooling(const Operation& operation) {
-//   // Setup pooling params.
-//   PoolingParams params;
-//   int32_t result = GetPoolingParams(model_, operation, params);
-//   if (result != error_t::NOT_ERROR)
-//     return result;
-//   const uint32_t input_index = operation.inputs[0];
-//   if (layer_id_map_.find(input_index) == layer_id_map_.end()) {
-//     std::cout << "The layer for operand index " << input_index
-//               << " is not ready";
-//     return error_t::BAD_DATA;
-//   }
-//   try {
-//     const uint32_t output_index = operation.outputs[0];
-//     std::string output_name(std::to_string(output_index));
-//     std::string name(output_name);
-//     if (params.fuse_code != FUSED_NONE) {
-//       name = name + "_pre_fuse";
-//     }
-//     const size_t input_layer_id = layer_id_map_[input_index];
-//     size_t layer_id = builder_->addLayer(
-//         {{input_layer_id}},
-//         Builder::PoolingLayer(name)
-//             .setExcludePad(true)
-//             .setKernel({params.filter_height, params.filter_width})
-//             .setStrides({params.stride_width, params.stride_height})
-//             .setPaddingsBegin({params.padding_top, params.padding_left})
-//             .setPaddingsEnd({params.padding_bottom, params.padding_right})
-//             .setPoolingType(operation.type == AVERAGE_POOL_2D
-//                                 ? Builder::PoolingLayer::PoolingType::AVG
-//                                 : Builder::PoolingLayer::PoolingType::MAX)
-//             .setRoundingType(Builder::PoolingLayer::RoundingType::FLOOR));
-//     if (params.fuse_code != FUSED_NONE) {
-//       result = AddActivationByFusedCode(params.fuse_code, layer_id,
-//       output_name,
-//                                         layer_id);
-//       if (result != error_t::NOT_ERROR) {
-//         return result;
-//       }
-//     }
-//     layer_id_map_[output_index] = layer_id;
-//   } catch (const std::exception& ex) {
-//     std::cout << "[IE] failed to add pooling layer " << ex.what();
-//     return error_t::OP_FAILED;
-//   }
-//   return error_t::NOT_ERROR;
-// }
+int32_t Compilation::AddPooling(const Operation& operation) {
+  // Setup pooling params.
+  PoolingParams params;
+  int32_t result = GetPoolingParams(model_, operation, params);
+  if (result != error_t::NOT_ERROR)
+    return result;
+  const uint32_t input_index = operation.inputs[0];
+  if (index_op_map_.find(input_index) == index_op_map_.end()) {
+    std::cout << "The layer for operand index " << input_index
+              << " is not ready";
+    return error_t::BAD_DATA;
+  }
+  try {
+    const uint32_t output_index = operation.outputs[0];
+    std::shared_ptr<ngraph::Node> pooling_node;
+    if (operation.type == operation_t::MAX_POOL_2D) {
+      pooling_node = std::make_shared<op::v1::MaxPool>(
+          index_op_map_[input_index],
+          std::vector<size_t>{params.stride_width, params.stride_height},
+          Shape{params.padding_top, params.padding_left},
+          Shape{params.padding_bottom, params.padding_right},
+          std::vector<size_t>{params.filter_height, params.filter_width},
+          op::RoundingType::FLOOR, op::PadType::EXPLICIT);
+    } else {
+      pooling_node = std::make_shared<op::v1::AvgPool>(
+          index_op_map_[input_index],
+          std::vector<size_t>{params.stride_width, params.stride_height},
+          Shape{params.padding_top, params.padding_left},
+          Shape{params.padding_bottom, params.padding_right},
+          std::vector<size_t>{params.filter_height, params.filter_width}, true,
+          op::RoundingType::FLOOR, op::PadType::EXPLICIT);
+    }
+    index_op_map_[output_index] =
+        AddActivationByFusedCode(params.fuse_code, pooling_node)->output(0);
+  } catch (const std::exception& ex) {
+    std::cout << "[IE] failed to add pooling layer " << ex.what();
+    return error_t::OP_FAILED;
+  }
+  return error_t::NOT_ERROR;
+}
 
-// int32_t Compilation::AddSoftmax(const Operation& operation) {
-//   // Setup softmax params.
-//   SoftmaxParams params;
-//   int32_t result = GetSoftmaxParams(model_, operation, params);
-//   if (result != error_t::NOT_ERROR)
-//     return result;
-//   // Check beta.
-//   if (params.beta != 1.0) {
-//     std::cout << "beta " << params.beta << " is not supported.";
-//     return error_t::BAD_DATA;
-//   }
-//   const uint32_t input_index = operation.inputs[0];
-//   if (layer_id_map_.find(input_index) == layer_id_map_.end()) {
-//     std::cout << "The layer for operand index " << input_index
-//               << " is not ready";
-//     return error_t::BAD_DATA;
-//   }
-//   try {
-//     const uint32_t output_index = operation.outputs[0];
-//     std::string name(std::to_string(output_index));
-//     const size_t input_layer_id = layer_id_map_[input_index];
-//     size_t layer_id = builder_->addLayer(
-//         {{input_layer_id}}, Builder::SoftMaxLayer(name).setAxis(1));
-//     layer_id_map_[output_index] = layer_id;
-//   } catch (const std::exception& ex) {
-//     std::cout << "[IE] failed to add softmax layer " << ex.what();
-//     return error_t::OP_FAILED;
-//   }
-//   return error_t::NOT_ERROR;
-// }
+int32_t Compilation::AddSoftmax(const Operation& operation) {
+  // Setup softmax params.
+  SoftmaxParams params;
+  int32_t result = GetSoftmaxParams(model_, operation, params);
+  if (result != error_t::NOT_ERROR)
+    return result;
+  // Check beta.
+  if (params.beta != 1.0) {
+    std::cout << "beta " << params.beta << " is not supported.";
+    return error_t::BAD_DATA;
+  }
+  const uint32_t input_index = operation.inputs[0];
+  if (index_op_map_.find(input_index) == index_op_map_.end()) {
+    std::cout << "The layer for operand index " << input_index
+              << " is not ready";
+    return error_t::BAD_DATA;
+  }
+
+  const uint32_t output_index = operation.outputs[0];
+  try {
+    auto softmax_node = std::make_shared<op::v1::Softmax>(
+        index_op_map_[input_index], params.beta);
+    index_op_map_[output_index] = softmax_node->output(0);
+  } catch (const std::exception& ex) {
+    std::cout << "[IE] failed to add softmax node " << ex.what() << std::endl;
+    return error_t::OP_FAILED;
+  }
+
+  return error_t::NOT_ERROR;
+}
 
 int32_t Compilation::AddReshape(const Operation& operation) {
   const uint32_t input_index = operation.inputs[0];
@@ -469,78 +453,71 @@ int32_t Compilation::AddReshape(const Operation& operation) {
   return error_t::NOT_ERROR;
 }
 
-// int32_t Compilation::AddConcatenation(const Operation& operation) {
-//   // Setup concatenation params.
-//   ConcatParams params;
-//   int32_t result = GetConcatParams(model_, operation, params);
-//   if (result != error_t::NOT_ERROR)
-//     return result;
+int32_t Compilation::AddConcatenation(const Operation& operation) {
+  // Setup concatenation params.
+  ConcatParams params;
+  int32_t result = GetConcatParams(model_, operation, params);
+  if (result != error_t::NOT_ERROR)
+    return result;
 
-//   std::vector<PortInfo> input_port_infos;
-//   std::vector<Port> input_ports;
-//   for (size_t i = 0; i < operation.inputs.size() - 1; ++i) {
-//     const uint32_t input_index = operation.inputs[i];
-//     if (layer_id_map_.find(input_index) == layer_id_map_.end()) {
-//       // Setup constants
-//       if (model_->values.find(input_index) != model_->values.end()) {
-//         result = AddConstant(input_index);
-//         if (result != error_t::NOT_ERROR) {
-//           return result;
-//         }
-//       } else {
-//         std::cout << "The layer for operand index " << input_index
-//                   << " is not ready";
-//         return error_t::BAD_DATA;
-//       }
-//     }
-//     const size_t layer_id = layer_id_map_[input_index];
-//     input_port_infos.push_back({layer_id});
-//     input_ports.push_back(builder_->getLayer(layer_id)->getOutputPorts()[0]);
-//   }
+  std::vector<std::shared_ptr<ngraph::Node>> input_nodes;
+  for (size_t i = 0; i < operation.inputs.size() - 1; ++i) {
+    const uint32_t input_index = operation.inputs[i];
+    if (index_op_map_.find(input_index) == index_op_map_.end()) {
+      // Setup constants
+      if (model_->values.find(input_index) != model_->values.end()) {
+        result = AddConstant(input_index);
+        if (result != error_t::NOT_ERROR) {
+          return result;
+        }
+      } else {
+        std::cout << "The layer for operand index " << input_index
+                  << " is not ready" << std::endl;
+        return error_t::BAD_DATA;
+      }
+    }
+    input_nodes.push_back(index_op_map_[input_index].get_node_shared_ptr());
+  }
+  int axis = 0;
+  const uint32_t rank = model_->operands[operation.inputs[0]].dimensions.size();
+  if (rank == 1 || rank == 2) {
+    axis = params.axis;
+  } else if (rank == 3) {
+    // HWC -> CHW
+    if (params.axis == 0) {
+      axis = 1;
+    } else if (params.axis == 1) {
+      axis = 2;
+    } else if (params.axis == 2) {
+      axis = 0;
+    }
+  } else if (rank == 4) {
+    // NHWC -> NCHW
+    if (params.axis == 0) {
+      axis = 0;
+    } else if (params.axis == 1) {
+      axis = 2;
+    } else if (params.axis == 2) {
+      axis = 3;
+    } else if (params.axis == 3) {
+      axis = 1;
+    }
+  } else {
+    std::cout << "rank " << rank << " is not supported.";
+    return error_t::BAD_DATA;
+  }
 
-//   int axis = 0;
-//   const uint32_t rank =
-//   model_->operands[operation.inputs[0]].dimensions.size(); if (rank == 1 ||
-//   rank == 2) {
-//     axis = params.axis;
-//   } else if (rank == 3) {
-//     // HWC -> CHW
-//     if (params.axis == 0) {
-//       axis = 1;
-//     } else if (params.axis == 1) {
-//       axis = 2;
-//     } else if (params.axis == 2) {
-//       axis = 0;
-//     }
-//   } else if (rank == 4) {
-//     // NHWC -> NCHW
-//     if (params.axis == 0) {
-//       axis = 0;
-//     } else if (params.axis == 1) {
-//       axis = 2;
-//     } else if (params.axis == 2) {
-//       axis = 3;
-//     } else if (params.axis == 3) {
-//       axis = 1;
-//     }
-//   } else {
-//     std::cout << "rank " << rank << " is not supported.";
-//     return error_t::BAD_DATA;
-//   }
+  const uint32_t output_index = operation.outputs[0];
+  try {
+    auto concat_node = std::make_shared<ngraph::op::Concat>(input_nodes, axis);
+    index_op_map_[output_index] = concat_node->output(0);
+  } catch (const std::exception& ex) {
+    std::cout << "[IE] failed to add concat layer " << ex.what() << std::endl;
+    return error_t::OP_FAILED;
+  }
 
-//   const uint32_t output_index = operation.outputs[0];
-//   std::string name(std::to_string(output_index));
-//   try {
-//     size_t layer_id = builder_->addLayer(
-//         input_port_infos,
-//         Builder::ConcatLayer(name).setInputPorts(input_ports).setAxis(axis));
-//     layer_id_map_[output_index] = layer_id;
-//   } catch (const std::exception& ex) {
-//     std::cout << "[IE] failed to add concat layer " << ex.what();
-//     return error_t::OP_FAILED;
-//   }
-//   return error_t::NOT_ERROR;
-// }
+  return error_t::NOT_ERROR;
+}
 
 int32_t Compilation::AddFullyConnected(const Operation& operation) {
   // Setup fully connected params.
@@ -571,7 +548,8 @@ int32_t Compilation::AddFullyConnected(const Operation& operation) {
     auto add_node = std::make_shared<op::v1::Add>(matmul_node->output(0),
                                                   index_op_map_[bias_index]);
     const uint32_t output_index = operation.outputs[0];
-    index_op_map_[output_index] = add_node->output(0);
+    index_op_map_[output_index] =
+        AddActivationByFusedCode(params.fuse_code, add_node)->output(0);
   } catch (const std::exception& ex) {
     std::cout << "[IE] failed to add fc layer " << ex.what();
     return error_t::OP_FAILED;
@@ -579,70 +557,73 @@ int32_t Compilation::AddFullyConnected(const Operation& operation) {
   return error_t::NOT_ERROR;
 }
 
-// int32_t Compilation::AddResizeBilinear(const Operation& operation) {
-//   // Setup resize bilinear params.
-//   ResizeBilinearParams params;
-//   int32_t result = GetResizeBilinearParams(model_, operation, params);
-//   if (result != error_t::NOT_ERROR)
-//     return result;
+int32_t Compilation::AddResizeBilinear(const Operation& operation) {
+  // Setup resize bilinear params.
+  ResizeBilinearParams params;
+  int32_t result = GetResizeBilinearParams(model_, operation, params);
+  if (result != error_t::NOT_ERROR)
+    return result;
 
-//   const uint32_t input_index = operation.inputs[0];
-//   if (layer_id_map_.find(input_index) == layer_id_map_.end()) {
-//     std::cout << "The layer for operand index " << input_index
-//               << " is not ready";
-//     return error_t::BAD_DATA;
-//   }
+  const uint32_t input_index = operation.inputs[0];
+  if (index_op_map_.find(input_index) == index_op_map_.end()) {
+    std::cout << "The layer for operand index " << input_index
+              << " is not ready" << std::endl;
+    return error_t::BAD_DATA;
+  }
 
-//   try {
-//     const uint32_t output_index = operation.outputs[0];
-//     std::string name(std::to_string(output_index));
-//     const size_t input_layer_id = layer_id_map_[input_index];
-//     size_t layer_id = builder_->addLayer(
-//         {{input_layer_id}},
-//         Builder::ResampleLayer(name)
-//             .setResampleType("caffe.ResampleParameter.LINEAR")
-//             .setAntialias(false)
-//             .setFactor(params.x_scale)
-//             .setWidth(params.width)
-//             .setHeight(params.height));
-//     layer_id_map_[output_index] = layer_id;
-//   } catch (const std::exception& ex) {
-//     std::cout << "[IE] failed to add resize bilinear layer " << ex.what();
-//     return error_t::OP_FAILED;
-//   }
-//   return error_t::NOT_ERROR;
-// }
+  ngraph::op::InterpolateAttrs attrs;
+  attrs.axes = {2, 3};
+  attrs.mode = "linear";
+  attrs.align_corners = params.align_corners;
+  attrs.antialias = false;
+  attrs.pads_begin = {0, 0, 0, 0};
+  attrs.pads_end = {0, 0, 0, 0};
 
-// int32_t Compilation::AddArgmax(const Operation& operation) {
-//   ArgmaxParams params;
-//   int32_t result = GetArgmaxParams(model_, operation, params);
-//   if (result != error_t::NOT_ERROR)
-//     return error_t::BAD_DATA;
+  auto target_shape_node = op::Constant::create<int64_t>(
+      element::i64, Shape{2}, {params.new_height, params.new_width});
 
-//   if (params.axis != 3) {
-//     std::cout << "Only support axis for channel.";
-//     return error_t::BAD_DATA;
-//   }
-//   const uint32_t input_index = operation.inputs[0];
-//   if (layer_id_map_.find(input_index) == layer_id_map_.end()) {
-//     std::cout << "The layer for operand index " << input_index
-//               << " is not ready";
-//     return error_t::BAD_DATA;
-//   }
-//   try {
-//     const uint32_t output_index = operation.outputs[0];
-//     std::string name(std::to_string(output_index));
-//     const size_t input_layer_id = layer_id_map_[input_index];
-//     size_t layer_id = builder_->addLayer(
-//         {{input_layer_id}},
-//         Builder::ArgMaxLayer(name).setAxis(1).setOutMaxVal(0).setTopK(1));
-//     layer_id_map_[output_index] = layer_id;
-//   } catch (const std::exception& ex) {
-//     std::cout << "[IE] failed to add argmax layer " << ex.what();
-//     return error_t::OP_FAILED;
-//   }
-//   return error_t::NOT_ERROR;
-// }
+  try {
+    const uint32_t output_index = operation.outputs[0];
+    auto resize_node = std::make_shared<op::v0::Interpolate>(
+        index_op_map_[input_index], target_shape_node->output(0), attrs);
+    index_op_map_[output_index] = resize_node->output(0);
+  } catch (const std::exception& ex) {
+    std::cout << "[IE] failed to add resize bilinear layer " << ex.what();
+    return error_t::OP_FAILED;
+  }
+  return error_t::NOT_ERROR;
+}
+
+int32_t Compilation::AddArgmax(const Operation& operation) {
+  ArgmaxParams params;
+  int32_t result = GetArgmaxParams(model_, operation, params);
+  if (result != error_t::NOT_ERROR)
+    return error_t::BAD_DATA;
+
+  if (params.axis != 3) {
+    std::cout << "Only support axis for channel.";
+    return error_t::BAD_DATA;
+  }
+
+  const uint32_t input_index = operation.inputs[0];
+  if (index_op_map_.find(input_index) == index_op_map_.end()) {
+    std::cout << "The layer for operand index " << input_index
+              << " is not ready" << std::endl;
+    return error_t::BAD_DATA;
+  }
+  try {
+    const uint32_t output_index = operation.outputs[0];
+    const auto k = op::Constant::create(element::i64, Shape{}, {1});
+    auto topk_node = std::make_shared<op::v1::TopK>(
+        index_op_map_[input_index], k->output(0), 1, "max", "value");
+    // output(1) with top k indices for each slice along axis dimension
+    index_op_map_[output_index] = topk_node->output(1);
+  } catch (const std::exception& ex) {
+    std::cout << "[IE] failed to add argmax layer " << ex.what() << std::endl;
+    return error_t::OP_FAILED;
+  }
+  return error_t::NOT_ERROR;
+}
 
 int32_t Compilation::AddSigmoid(const Operation& operation) {
   const uint32_t input_index = operation.inputs[0];

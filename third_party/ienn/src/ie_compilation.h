@@ -165,10 +165,6 @@ class Compilation {
   int32_t AddInput(uint32_t index);
   int32_t AddOutput(uint32_t index);
   int32_t AddBiasWithBroadcasting(uint32_t bias_index, uint32_t output_index);
-  int32_t AddActivationByFusedCode(int32_t fuse_code,
-                                   size_t input_layer,
-                                   const std::string& name,
-                                   size_t& activiation_layer_id);
   int32_t AddElementwise(const Operation& operation);
   int32_t AddConvolution(const Operation& operation);
   int32_t AddPooling(const Operation& operation);
