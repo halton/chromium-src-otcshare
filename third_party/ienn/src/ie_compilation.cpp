@@ -50,9 +50,11 @@ std::shared_ptr<ngraph::Node> AddActivationByFusedCode(
   if (fuse_code == fuse_t::FUSED_RELU) {
     activation_node = std::make_shared<op::v0::Relu>(input_node->output(0));
   } else if (fuse_code == fuse_t::FUSED_RELU1) {
-    activation_node = std::make_shared<op::v0::Clamp>(input_node->output(0), -1.0, 1.0);
+    activation_node =
+        std::make_shared<op::v0::Clamp>(input_node->output(0), -1.0, 1.0);
   } else if (fuse_code == fuse_t::FUSED_RELU6) {
-    activation_node = std::make_shared<op::v0::Clamp>(input_node->output(0), 0.0, 6.0);
+    activation_node =
+        std::make_shared<op::v0::Clamp>(input_node->output(0), 0.0, 6.0);
   } else if (fuse_code == fuse_t::FUSED_NONE) {
     return input_node;
   }
@@ -257,11 +259,17 @@ int32_t Compilation::AddElementwise(const Operation& operation) {
     return result;
   for (size_t i = 0; i < 2; ++i) {
     const uint32_t input_index = operation.inputs[i];
-    // Setup constants
-    if (model_->values.find(input_index) != model_->values.end()) {
-      result = AddConstant(input_index);
-      if (result != error_t::NOT_ERROR) {
-        return result;
+    if (index_op_map_.find(input_index) == index_op_map_.end()) {
+      // Setup constants
+      if (model_->values.find(input_index) != model_->values.end()) {
+        result = AddConstant(input_index);
+        if (result != error_t::NOT_ERROR) {
+          return result;
+        }
+      } else {
+        std::cout << "The layer for operand index " << input_index
+                  << " is not ready";
+        return error_t::BAD_DATA;
       }
     }
   }

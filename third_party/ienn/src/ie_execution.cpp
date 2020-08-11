@@ -8,6 +8,7 @@
 #include <gna/gna_config.hpp>
 #include <utility>
 #include "constants.h"
+#include "ngraph/node.hpp"
 
 namespace InferenceEngine {
 
@@ -124,9 +125,6 @@ int32_t Execution::StartCompute() {
             : infer_request_.get();
     ModelInfoPtr model = compilation_->model_;
 
-    InputsDataMap inputInfo = compilation_->network_->getInputsInfo();
-    auto inputInfoItem = inputInfo.begin();
-
     for (size_t i = 0; i < model->inputs.size(); ++i) {
       size_t index = model->inputs[i];
       const Operand& operand = model->operands[index];
@@ -137,9 +135,9 @@ int32_t Execution::StartCompute() {
         std::cout << "Only TENSOR_FLOAT32 operand type is supported";
         return error_t::BAD_DATA;
       }
-      Blob::Ptr input_blob = infer_request->GetBlob(inputInfoItem->first);
-      inputInfoItem ++;
-
+      auto input_name =
+          compilation_->index_op_map_[index].get_node()->get_name();
+      Blob::Ptr input_blob = infer_request->GetBlob(input_name);
       float* dst = input_blob->buffer()
                        .as<PrecisionTrait<Precision::FP32>::value_type*>();
       const float* src = reinterpret_cast<const float*>(input_data_[i].buffer);
@@ -158,8 +156,7 @@ int32_t Execution::StartCompute() {
     }
 
     infer_request->Infer();
-    OutputsDataMap outputInfo = compilation_->network_->getOutputsInfo();
-    auto outputInfoItem = outputInfo.begin();
+
     for (size_t i = 0; i < model->outputs.size(); ++i) {
       uint32_t index = model->outputs[i];
       const Operand& operand = model->operands[index];
@@ -167,7 +164,16 @@ int32_t Execution::StartCompute() {
       const uint32_t length = output_data_[i].length;
       total_length += length;
       void* mapping = output_data_[i].buffer;
-      Blob::Ptr output_blob = infer_request->GetBlob(outputInfoItem->first);
+      auto output_name =
+          compilation_->index_op_map_[index].get_node()->get_name();
+      // In case that one output layer has multiple output nodes.
+      // For example, TopK has two output nodes: output(0) and output(1),
+      // we select output(1) as the output layer whose name should append ".1".
+      auto output_node_index = compilation_->index_op_map_[index].get_index();
+      if (output_node_index != 0) {
+        output_name.append(".").append(std::to_string(output_node_index));
+      }
+      Blob::Ptr output_blob = infer_request->GetBlob(output_name);
 
       // ngraph can't support setLayout of hwc
       // so we need to reorder chw=>hwc
@@ -179,7 +185,7 @@ int32_t Execution::StartCompute() {
         // Since polyfill only support 3D output for argmax
         // and the layout of the 3D output is nhw
         // so we need to reshape nhw to original nhwc
-        if (outputInfoItem->first.find("TopK") != std::string::npos) {
+        if (output_name.find("TopK") != std::string::npos) {
           dims.push_back(1);
         }
         if (operand.type == data_t::TENSOR_FLOAT32) {
@@ -195,7 +201,6 @@ int32_t Execution::StartCompute() {
       } else {
         memcpy(mapping, output_blob->buffer(), length);
       }
-      outputInfoItem++;
     }
   } catch (const std::exception& ex) {
     std::cout << "[IE] exception " << ex.what();
