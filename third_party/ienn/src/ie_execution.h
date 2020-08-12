@@ -31,7 +31,6 @@ class Execution {
   std::vector<OutputData> output_data_;
 
   std::unique_ptr<InferRequest> infer_request_;
-  std::unique_ptr<InferencePlugin> plugin_;
   std::unique_ptr<ExecutableNetwork> execution_;
   std::unique_ptr<Core> ie_core_;
 
