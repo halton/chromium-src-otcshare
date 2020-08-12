@@ -197,7 +197,7 @@ int32_t Compilation::AddOutput(uint32_t index) {
 }
 
 int32_t Compilation::AddConstant(uint32_t index,
-                                 std::vector<size_t> group_conv_weights_dims) {
+                                 std::vector<size_t> specified_dims) {
   try {
     const Operand& operand = model_->operands[index];
     SizeVector dims;
@@ -225,13 +225,15 @@ int32_t Compilation::AddConstant(uint32_t index,
         reinterpret_cast<const float*>(model_->values[index].buffer);
     std::shared_ptr<op::Constant> constant_node;
     SizeVector const_dims =
-        group_conv_weights_dims.size() == 0 ? dims : group_conv_weights_dims;
+        specified_dims.size() == 0 ? dims : specified_dims;
     if (fp32_precision) {
       float* dst = blob->buffer().as<float*>();
       result = Reorder<float>(dst, src, operand.dimensions);
       if (result != error_t::NOT_ERROR) {
         return result;
       }
+      // The layout of constant_node depends on the shape we set
+      // e.g. 4D shape will use default NCHW
       constant_node = std::make_shared<op::Constant>(
           element::f32, Shape(const_dims), blob->buffer().as<float*>());
     } else {
@@ -350,7 +352,9 @@ int32_t Compilation::AddConvolution(const Operation& operation) {
     }
     // add bias and fused-code
     const uint32_t output_index = operation.outputs[0];
-    AddBiasWithBroadcasting(bias_index, output_index);
+    // Since cldnn doesn't support mixed layout
+    // We reshape the bias to 4D NCHW aligned with conv_node
+    AddConstant(output_index, {1, params.bias_length, 1, 1});
     auto add_node = std::make_shared<op::v1::Add>(conv_node->output(0),
                                                   index_op_map_[bias_index]);
     index_op_map_[output_index] =
@@ -647,33 +651,6 @@ int32_t Compilation::AddSigmoid(const Operation& operation) {
     index_op_map_[output_index] = sigmoid_node->output(0);
   } catch (const std::exception& ex) {
     std::cout << "[IE] failed to add sigmoid layer " << ex.what();
-    return error_t::OP_FAILED;
-  }
-  return error_t::NOT_ERROR;
-}
-
-int32_t Compilation::AddBiasWithBroadcasting(uint32_t bias_index,
-                                             uint32_t output_index) {
-  try {
-    AddConstant(bias_index);
-    const Operand& output = model_->operands[output_index];
-    SizeVector dims;
-    uint32_t result = ConvertDims(output.dimensions, dims);
-    if (result != error_t::NOT_ERROR) {
-      return result;
-    }
-    // Need to broadcast the bias for convolution paticularly
-    auto target_shape_node =
-        std::make_shared<op::Constant>(element::i64, Shape{dims.size()}, dims);
-    // Keep the bias's channel size, and broadcast along N,H,W
-    auto axis_mapping_node =
-        op::Constant::create<int64_t>(element::i64, Shape{1}, {1});
-    auto broadcast_node = std::make_shared<op::v1::Broadcast>(
-        index_op_map_[bias_index], target_shape_node->output(0),
-        axis_mapping_node->output(0));
-    index_op_map_[bias_index] = broadcast_node->output(0);
-  } catch (const std::exception& ex) {
-    std::cout << "[IE] failed to add broadcast layer " << ex.what();
     return error_t::OP_FAILED;
   }
   return error_t::NOT_ERROR;
