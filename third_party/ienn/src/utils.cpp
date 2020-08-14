@@ -59,8 +59,6 @@ uint32_t product(const std::vector<uint32_t>& dims) {
 
 int32_t GetScalarInt32(ModelInfoPtr model, uint32_t index) {
   const OperandValue& info = model->values[index];
-  const int32_t* data = reinterpret_cast<const int32_t*>(info.buffer);
-  std::cout << "==== " << data[0];
   return reinterpret_cast<const int32_t*>(info.buffer)[0];
 }
 
