@@ -161,10 +161,9 @@ class Compilation {
 
  private:
   int32_t AddConstant(uint32_t index,
-                      std::vector<size_t> group_conv_weights_dims = {});
+                      std::vector<size_t> specified_dims = {});
   int32_t AddInput(uint32_t index);
   int32_t AddOutput(uint32_t index);
-  int32_t AddBiasWithBroadcasting(uint32_t bias_index, uint32_t output_index);
   int32_t AddElementwise(const Operation& operation);
   int32_t AddConvolution(const Operation& operation);
   int32_t AddPooling(const Operation& operation);
