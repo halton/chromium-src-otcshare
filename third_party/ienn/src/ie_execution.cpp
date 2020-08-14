@@ -21,7 +21,6 @@ static std::unique_ptr<InferRequest> s_gna_infer_request = nullptr;
 Execution::Execution(std::unique_ptr<Compilation> compilation)
     : compilation_(std::move(compilation)),
       infer_request_(nullptr),
-      plugin_(nullptr),
       execution_(nullptr),
       ie_core_(nullptr) {}
 
@@ -97,7 +96,7 @@ Execution::~Execution() {
     // Release in squence to avoid crash.
     infer_request_.reset(nullptr);
     execution_.reset(nullptr);
-    plugin_.reset(nullptr);
+    ie_core_.reset(nullptr);
   }
 }
 

@@ -170,8 +170,11 @@ int32_t Compilation::AddInput(uint32_t index) {
     return result;
   }
   try {
-    auto input_node =
-        std::make_shared<op::Parameter>(element::f32, Shape(dims));
+    // MYRIAD only supports FP16 models, but it can accept FP32 inputs. So we
+    // can also set the inputs precison to FP32.
+    auto input_node = std::make_shared<op::Parameter>(
+        preference_ != PREFER_LOW_POWER ? element::f32 : element::f16,
+        Shape(dims));
     index_op_map_[index] = input_node->output(0);
     ngraph_inputs_.push_back(input_node);
   } catch (const std::exception& ex) {
@@ -241,7 +244,7 @@ int32_t Compilation::AddConstant(uint32_t index,
         return result;
       }
       constant_node = std::make_shared<op::Constant>(
-          element::i16, Shape(const_dims), blob->buffer().as<int16_t*>());
+          element::f16, Shape(const_dims), blob->buffer().as<int16_t*>());
     }
     index_op_map_[index] = constant_node->output(0);
   } catch (const std::exception& ex) {
