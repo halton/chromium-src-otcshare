@@ -357,7 +357,7 @@ int32_t Compilation::AddConvolution(const Operation& operation) {
     const uint32_t output_index = operation.outputs[0];
     // Since cldnn doesn't support mixed layout
     // We reshape the bias to 4D NCHW aligned with conv_node
-    AddConstant(output_index, {1, params.bias_length, 1, 1});
+    AddConstant(bias_index, {1, params.bias_length, 1, 1});
     auto add_node = std::make_shared<op::v1::Add>(conv_node->output(0),
                                                   index_op_map_[bias_index]);
     index_op_map_[output_index] =
