@@ -19,6 +19,7 @@
 namespace ngraph {
 class Function;
 class Node;
+template <>
 class Output<ngraph::Node>;
 namespace op {
 namespace v0 {
