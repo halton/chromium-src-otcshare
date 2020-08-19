@@ -143,6 +143,8 @@ int32_t Compilation::Compile() {
       result = AddPooling(operation);
     } else if (type == operation_t::SOFTMAX) {
       result = AddSoftmax(operation);
+    } else if (type == operation_t::CONVERT) {
+      result = AddConvert(operation);
     } else if (type == operation_t::RESHAPE) {
       result = AddReshape(operation);
     } else if (type == operation_t::CONCATENATION) {
@@ -422,6 +424,45 @@ int32_t Compilation::AddPooling(const Operation& operation) {
         params.nhwc_layout ? TransposeLayout(fused_node, false) : fused_node;
   } catch (const std::exception& ex) {
     std::cout << "[IE] failed to add pooling layer " << ex.what();
+    return error_t::OP_FAILED;
+  }
+  return error_t::NOT_ERROR;
+}
+
+int32_t Compilation::AddConvert(const Operation& operation) {
+  const uint32_t input_index = operation.inputs[0];
+  if (index_op_map_.find(input_index) == index_op_map_.end()) {
+    std::cout << "The layer for operand index " << input_index
+              << " is not ready";
+    return error_t::BAD_DATA;
+  }
+
+  const uint32_t output_index = operation.outputs[0];
+  int32_t output_type = model_->operands[output_index].type;
+  ngraph::element::Type destination_type;
+  switch (output_type) {
+    case 'data_t::FLOAT32':
+      destination_type = element::f32;
+      break;
+    case 'data_t::INT32':
+      destination_type = element::i32;
+      break;
+    case 'data_t::TENSOR_QUANT8_ASYMM_SIGNED':
+      destination_type = element::i8;
+      break;
+    case 'data_t::TENSOR_QUANT8_ASYMM':
+      destination_type = element::u8;
+      break;
+    default:
+      destination_type = element::f32;
+  }
+
+  try {
+    auto convert_node = std::make_shared<op::v0::Convert>(
+        index_op_map_[input_index], destination_type);
+    index_op_map_[output_index] = convert_node->output(0);
+  } catch (const std::exception& ex) {
+    std::cout << "[IE] failed to add softmax node " << ex.what() << std::endl;
     return error_t::OP_FAILED;
   }
   return error_t::NOT_ERROR;

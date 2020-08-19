@@ -48,6 +48,8 @@ const int32 ARGMAX = 39;
 const int32 PRELU = 71;
 const int32 ATROUS_CONV_2D = 10003;
 const int32 ATROUS_DEPTHWISE_CONV_2D = 10004;
+const int32 FAKE_QUANTIZE = 20000;
+const int32 CONVERT = 30000;
 
 // Fused activation function types.
 const int32 FUSED_NONE = 0;

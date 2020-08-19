@@ -187,6 +187,7 @@ class Compilation {
   int32_t AddArgmax(const Operation& operation);
   int32_t AddActivation(const Operation& operation);
   int32_t AddTranspose(const Operation& operation);
+  int32_t AddConvert(const Operation& operation);
 
  private:
   friend class Execution;

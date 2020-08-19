@@ -50,6 +50,8 @@ interface NeuralNetworkContext {
     const long PRELU = 71;
     const long ATROUS_CONV_2D = 10003;
     const long ATROUS_DEPTHWISE_CONV_2D = 10004;
+    const long FAKE_QUANTIZE = 20000;
+    const long CONVERT = 30000;
 
     // Fused activation function types.
     const long FUSED_NONE = 0;
