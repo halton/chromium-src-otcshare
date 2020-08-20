@@ -783,4 +783,30 @@ int32_t Compilation::AddTranspose(const Operation& operation) {
   return error_t::NOT_ERROR;
 }
 
+int32_t Compilation::AddFakequantize(const Operation& operation) {
+  try {
+    const uint32_t input_low_index = operation.inputs[1];
+    const uint32_t input_high_index = operation.inputs[2];
+    const uint32_t output_low_index = operation.inputs[3];
+    const uint32_t output_high_index = operation.inputs[4];
+
+    AddConstant(input_low_index);
+    AddConstant(input_high_index);
+    AddConstant(output_low_index);
+    AddConstant(output_high_index);
+    size_t levels = GetScalarInt32(model_, operation.inputs[5]);
+
+    auto fakequantize_node = std::make_shared<op::v0::FakeQuantize>(
+        index_op_map_[input_index], index_op_map_[input_low_index],
+        index_op_map_[input_high_index], index_op_map_[output_low_index],
+        index_op_map_[output_high_index], levels);
+    const uint32_t output_index = operation.outputs[0];
+    index_op_map_[output_index] = fakequantize_node->output(0);
+  } catch (const std::exception& ex) {
+    std::cout << "[IE] failed to add fakequantize layer " << ex.what();
+    return error_t::OP_FAILED;
+  }
+  return error_t::NOT_ERROR;
+}
+
 }  // namespace InferenceEngine
