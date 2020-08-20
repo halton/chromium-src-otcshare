@@ -74,6 +74,8 @@ class NeuralNetworkContext final : public ScriptWrappable,
   static const unsigned long kPrelu = 71;
   static const unsigned long kAtrousConv2D = 10003;
   static const unsigned long kAtrousDepthwiseConv2D = 10004;
+  static const unsigned long kFakeQuantize = 20000;
+  static const unsigned long kConvert = 30000;
 
   // Fused activation function types.
   static const unsigned long kFusedNone = 0;
