@@ -1,0 +1,31 @@
+# Copyright 2020 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("../../modules.gni")
+
+blink_modules_sources("v2") {
+  sources = [
+    "nn_compilation.cpp",
+    "nn_compilation.h",
+    "nn_context.cpp",
+    "nn_context.h",
+    "nn_execution.cpp",
+    "nn_execution.h",
+    "nn_model.cpp",
+    "nn_model.h",
+    "operand.cpp",
+    "operand.h",
+    "ops/binary.cc",
+    "ops/binary.h",
+    "ops/constant.cc",
+    "ops/constant.h",
+    "ops/input.cc",
+    "ops/input.h",
+  ]
+
+  public_deps = [
+    "//services/ml/public/mojom:mojom_blink",
+    "//skia/public/mojom",
+  ]
+}

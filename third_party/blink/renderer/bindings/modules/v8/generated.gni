@@ -87,6 +87,8 @@ bindings_modules_generated_union_type_files = [
   "$bindings_modules_v8_output_dir/point_2d_sequence_or_constrain_point_2d_parameters.h",
   "$bindings_modules_v8_output_dir/rendering_context.cc",
   "$bindings_modules_v8_output_dir/rendering_context.h",
+  "$bindings_modules_v8_output_dir/neural_network_context_or_nn_context.cc",
+  "$bindings_modules_v8_output_dir/neural_network_context_or_nn_context.h",
   "$bindings_modules_v8_output_dir/request_or_usv_string_or_request_or_usv_string_sequence.cc",
   "$bindings_modules_v8_output_dir/request_or_usv_string_or_request_or_usv_string_sequence.h",
   "$bindings_modules_v8_output_dir/rtc_ice_candidate_init_or_rtc_ice_candidate.cc",

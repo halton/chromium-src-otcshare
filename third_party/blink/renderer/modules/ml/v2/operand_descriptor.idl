@@ -1,0 +1,35 @@
+// Copyright 2020 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+enum OperandLayout {
+  "nchw",
+  "nhwc",
+};
+
+enum OperandType {
+  "float32",
+  "float16",
+  "int32",
+  "uint32",
+  "tensor-float32",
+  "tensor-float16",
+  "tensor-int32",
+  "tensor-quant8-asymm",
+};
+
+dictionary OperandDescriptor {
+  // The operand type.
+  required OperandType type;
+
+  // The dimensions field is only required for tensor operands.
+  // The negative value means an unknown dimension.
+  sequence<unsigned long> dimensions;
+
+  // The following two fields are only required for quantized operand.
+  // scale: an non-negative floating point value
+  // zeroPoint: an integer, in range [0, 255]
+  // The real value is (value - zeroPoint) * scale
+  float scale;
+  long zeroPoint;
+};
