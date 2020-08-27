@@ -12,6 +12,23 @@
 
 namespace InferenceEngine {
 
+namespace {
+std::vector<uint32_t> ConvertDimension(const std::vector<size_t>& dimensions) {
+  if (dimensions.size() == 3) {
+    // CHW -> HWC
+    return {static_cast<uint32_t>(dimensions[1]),
+            static_cast<uint32_t>(dimensions[2]),
+            static_cast<uint32_t>(dimensions[0])};
+  } else if (dimensions.size() == 4) {
+    // NCHW -> NHWC
+    return {static_cast<uint32_t>(dimensions[0]),
+            static_cast<uint32_t>(dimensions[2]),
+            static_cast<uint32_t>(dimensions[3]),
+            static_cast<uint32_t>(dimensions[1])};
+  }
+  return {};
+}
+}  // namespace
 // TODO(Junwei): GNA device only be opened for one instance of
 // ExecutableNetwork, there will be memory leak for these static objects.
 static std::unique_ptr<Core> s_ie_core = nullptr;
@@ -159,9 +176,7 @@ int32_t Execution::StartCompute() {
     for (size_t i = 0; i < model->outputs.size(); ++i) {
       uint32_t index = model->outputs[i];
       const Operand& operand = model->operands[index];
-      uint32_t offset = total_length;
       const uint32_t length = output_data_[i].length;
-      total_length += length;
       void* mapping = output_data_[i].buffer;
       auto output_name =
           compilation_->index_op_map_[index].get_node()->get_name();
@@ -173,24 +188,23 @@ int32_t Execution::StartCompute() {
         output_name.append(".").append(std::to_string(output_node_index));
       }
       Blob::Ptr output_blob = infer_request->GetBlob(output_name);
-
-      // ngraph can't support setLayout of hwc
-      // so we need to reorder chw=>hwc
-      if (operand.dimensions.size() == 3) {
+      // shape is NCHW layout.
+      auto shape = compilation_->index_op_map_[index].get_shape();
+      std::vector<uint32_t> dims = ConvertDimension(shape);
+      // "dims.size() == 3" because ngraph can't support setLayout of hwc
+      // so we need to reorder chw=>hwc.
+      // "output_name.find("TopK") != std::string::npos" Since polyfill only
+      // support 3D output for argmax and the layout of the 3D output is nhw so
+      // we need to reshape nhw to original nhwc.
+      if (dims.size() == 3 || output_name.find("TopK") != std::string::npos) {
         const float* src =
             output_blob->buffer()
                 .as<PrecisionTrait<Precision::FP32>::value_type*>();
-        std::vector<uint32_t> dims(operand.dimensions);
-        // Since polyfill only support 3D output for argmax
-        // and the layout of the 3D output is nhw
-        // so we need to reshape nhw to original nhwc
-        if (output_name.find("TopK") != std::string::npos) {
-          dims.push_back(1);
-        }
         if (operand.type == data_t::TENSOR_FLOAT32) {
           float* dst = reinterpret_cast<float*>(mapping);
           result = Reorder<float>(dst, src, dims, false);
         } else if (operand.type == data_t::TENSOR_INT32) {
+          // V2 doesn't output TENSOR_INT32 type.
           int32_t* dst = reinterpret_cast<int32_t*>(mapping);
           result = Reorder<int32_t>(dst, src, dims, false);
         }
