@@ -92,7 +92,8 @@ ExecutionImplMPS::ExecutionImplMPS(
 
 ExecutionImplMPS::~ExecutionImplMPS() = default;
 
-void ExecutionImplMPS::StartCompute(StartComputeCallback callback) {
+void ExecutionImplMPS::StartCompute(mojom::UserBufferPtr user_buffer,
+                                    StartComputeCallback callback) {
   DLOG(INFO) << "ExecutionImplMPS::StartCompute";
   bool success = true;
   if (@available(macOS 10.13, *)) {

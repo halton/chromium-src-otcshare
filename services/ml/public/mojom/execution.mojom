@@ -4,7 +4,19 @@
 
 module ml.mojom;
 
+struct BufferInfo {
+  uint32 offset;
+  uint32 length;
+};
+
+struct UserBuffer {
+  array<BufferInfo> inputs;
+  array<BufferInfo> outputs;
+  handle<shared_buffer>? memory;
+  uint32 memory_size;
+};
+
 interface Execution {
-  StartCompute()
+  StartCompute(UserBuffer? buffer)
     => (int32 resultCode);
 };

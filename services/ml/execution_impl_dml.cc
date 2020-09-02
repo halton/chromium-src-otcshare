@@ -23,7 +23,8 @@ ExecutionImplDML::ExecutionImplDML(scoped_refptr<CompiledModelDML> dml,
 
 ExecutionImplDML::~ExecutionImplDML() = default;
 
-void ExecutionImplDML::StartCompute(StartComputeCallback callback) {
+void ExecutionImplDML::StartCompute(mojom::UserBufferPtr user_buffer,
+                                    StartComputeCallback callback) {
   uint32_t memory_offset = 0;
   HRESULT hr = S_OK;
   for (size_t i = 0; i < params_->inputs.size(); ++i) {

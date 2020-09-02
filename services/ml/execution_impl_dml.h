@@ -26,7 +26,8 @@ class ExecutionImplDML : public mojom::Execution {
                    mojom::ExecutionInitParamsPtr params);
   ~ExecutionImplDML() override;
 
-  void StartCompute(StartComputeCallback callback) override;
+  void StartCompute(mojom::UserBufferPtr user_buffer,
+                    StartComputeCallback callback) override;
 
  private:
   HRESULT ExecuteCompiledOperator(IDMLCompiledOperator*,
