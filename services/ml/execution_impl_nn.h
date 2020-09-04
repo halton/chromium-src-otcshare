@@ -32,9 +32,12 @@ class ExecutionImplNN : public mojom::Execution {
                        mojo::ScopedSharedBufferHandle);
   ~ExecutionImplNN() override;
 
-  void StartCompute(StartComputeCallback callback) override;
+  void StartCompute(mojom::UserBufferPtr user_buffer,
+                    StartComputeCallback callback) override;
 
  private:
+  void ResetWithUserBuffer(mojom::UserBufferPtr user_buffer);
+
   std::vector<Operand> operands_;
   std::vector<Operation> operations_;
   std::vector<uint32_t> inputs_;

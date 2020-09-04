@@ -19,7 +19,8 @@ ExecutionImplDnnl::ExecutionImplDnnl(
 
 ExecutionImplDnnl::~ExecutionImplDnnl() {}
 
-void ExecutionImplDnnl::StartCompute(StartComputeCallback callback) {
+void ExecutionImplDnnl::StartCompute(mojom::UserBufferPtr user_buffer,
+                                     StartComputeCallback callback) {
   dnnl_status_t status;
   uint32_t total_length = 0;
   for (size_t i = 0; i < params_->inputs.size(); ++i) {

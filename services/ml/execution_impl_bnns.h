@@ -26,7 +26,8 @@ class ExecutionImplBnns : public mojom::Execution {
                     mojom::ExecutionInitParamsPtr params);
   ~ExecutionImplBnns() override;
 
-  void StartCompute(StartComputeCallback callback) override;
+  void StartCompute(mojom::UserBufferPtr user_buffer,
+                    StartComputeCallback callback) override;
 
  private:
   mojom::ExecutionInitParamsPtr params_;

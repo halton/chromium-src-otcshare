@@ -52,7 +52,8 @@ ExecutionImplClDnn::~ExecutionImplClDnn() {
   }
 }
 
-void ExecutionImplClDnn::StartCompute(StartComputeCallback callback) {
+void ExecutionImplClDnn::StartCompute(mojom::UserBufferPtr user_buffer,
+                                      StartComputeCallback callback) {
   DLOG(INFO) << "ExecutionImplClDnn::StartCompute";
 
   if (network_ == nullptr) {

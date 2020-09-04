@@ -25,7 +25,8 @@ class ExecutionImplDnnl : public mojom::Execution {
                     mojom::ExecutionInitParamsPtr params);
   ~ExecutionImplDnnl() override;
 
-  void StartCompute(StartComputeCallback callback) override;
+  void StartCompute(mojom::UserBufferPtr user_buffer,
+                    StartComputeCallback callback) override;
 
  private:
   int32_t DnnlExecuteNet(std::vector<dnnl_primitive_t>&, std::vector<args_t>&);

@@ -96,7 +96,8 @@ ExecutionImplBnns::~ExecutionImplBnns() {
   }
 }
 
-void ExecutionImplBnns::StartCompute(StartComputeCallback callback) {
+void ExecutionImplBnns::StartCompute(mojom::UserBufferPtr user_buffer,
+                                     StartComputeCallback callback) {
   DLOG(INFO) << "ExecutionImplBnns::StartCompute";
   uint32_t mapped_length = 0;
   for (size_t i = 0; i < params_->inputs.size(); ++i) {

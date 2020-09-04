@@ -30,35 +30,25 @@ ExecutionImplNN::ExecutionImplNN(const CompilationImplNN* compilation,
 #endif
 #if defined(OS_LINUX) || defined(OS_WIN)
   // Create Execution
-  int32_t result = IE(ie_execution_create)(ie_compilation_, &ie_execution_);
+  IE(ie_execution_create)(ie_compilation_, &ie_execution_);
 #endif
   uint32_t total_length = 0;
   inputs_info_.reserve(inputs_.size());
   for (size_t i = 0; i < inputs_.size(); ++i) {
     uint32_t offset = total_length;
     uint32_t length = operands_[inputs_[i]].requiredSize();
-
     inputs_info_.push_back(std::make_unique<OperandInfo>(
         offset, length, memory_->MapAtOffset(length, offset)));
     total_length += length;
-#if defined(OS_LINUX) || defined(OS_WIN)
-    result = IE(ie_execution_set_input)(ie_execution_, inputs_[i],
-                                        inputs_info_[i]->mapping.get(), length);
-#endif
   }
 
   outputs_info_.reserve(outputs_.size());
   for (size_t i = 0; i < outputs_.size(); ++i) {
     uint32_t offset = total_length;
     uint32_t length = operands_[outputs_[i]].requiredSize();
-
     outputs_info_.push_back(std::make_unique<OperandInfo>(
         offset, length, memory_->MapAtOffset(length, offset)));
     total_length += length;
-#if defined(OS_LINUX) || defined(OS_WIN)
-    result = IE(ie_execution_set_output)(
-        ie_execution_, outputs_[i], outputs_info_[i]->mapping.get(), length);
-#endif
   }
 }
 
@@ -72,33 +62,63 @@ ExecutionImplNN::~ExecutionImplNN() {
   DLOG(INFO) << "ANeuralNetworksCompilation_free";
 }
 
-void ExecutionImplNN::StartCompute(StartComputeCallback callback) {
-  DLOG(INFO) << "ExecutionImplNN::StartCompute";
+void ExecutionImplNN::ResetWithUserBuffer(mojom::UserBufferPtr user_buffer) {
+  inputs_info_.clear();
+  memory_ = std::move(user_buffer->memory);
+  for (auto& input : user_buffer->inputs) {
+    uint32_t offset = input->offset;
+    uint32_t length = input->length;
+    inputs_info_.push_back(std::make_unique<OperandInfo>(
+        offset, length, memory_->MapAtOffset(length, offset)));
+  }
 
-#if defined(OS_LINUX) || defined(OS_WIN)
-  int32_t result = IE(ie_execution_start_compute)(ie_execution_);
-  LOG(INFO) << "ie_execution_start_compute: " << result;
-#else
+  outputs_info_.clear();
+  for (auto& output : user_buffer->outputs) {
+    uint32_t offset = output->offset;
+    uint32_t length = output->length;
+    outputs_info_.push_back(std::make_unique<OperandInfo>(
+        offset, length, memory_->MapAtOffset(length, offset)));
+  }
+}
+
+void ExecutionImplNN::StartCompute(mojom::UserBufferPtr user_buffer,
+                                   StartComputeCallback callback) {
+  DLOG(INFO) << "ExecutionImplNN::StartCompute";
+  if (user_buffer.get()) {
+    ResetWithUserBuffer(std::move(user_buffer));
+  }
+
+  int32_t result = 0;
+#if defined(OS_ANDROID)
   ANeuralNetworksExecution* nn_execution;
-  int32_t result =
+  result =
       ANeuralNetworksExecution_create(nn_compilation_, &nn_execution);
-  DLOG(INFO) << "ANeuralNetworksExecution_create: " << result;
+#endif
   for (size_t i = 0; i < inputs_info_.size(); ++i) {
     std::unique_ptr<OperandInfo>& info = inputs_info_[i];
+#if defined(OS_ANDROID)
     result = ANeuralNetworksExecution_setInput(
         nn_execution, i, NULL, static_cast<void*>(info->mapping.get()),
         info->length);
-    DLOG(INFO) << "ANeuralNetworksExecution_setInput: " << result;
+#else
+    result = IE(ie_execution_set_input)(ie_execution_, i,
+                                        info->mapping.get(), info->length);
+#endif
   }
 
   for (size_t i = 0; i < outputs_info_.size(); ++i) {
     std::unique_ptr<OperandInfo>& info = outputs_info_[i];
+#if defined(OS_ANDROID)
     result = ANeuralNetworksExecution_setOutput(
         nn_execution, i, NULL, static_cast<void*>(info->mapping.get()),
         info->length);
-    DLOG(INFO) << "ANeuralNetworksExecution_setOutput: " << result;
+#else
+    result = IE(ie_execution_set_output)(
+        ie_execution_, i, info->mapping.get(), info->length);
+#endif
   }
 
+#if defined(OS_ANDROID)
   ANeuralNetworksEvent* nn_event;
   result = ANeuralNetworksExecution_startCompute(nn_execution, &nn_event);
   LOG(INFO) << "ANeuralNetworksExecution_startCompute: " << result;
@@ -107,7 +127,10 @@ void ExecutionImplNN::StartCompute(StartComputeCallback callback) {
   ANeuralNetworksEvent_free(nn_event);
 
   ANeuralNetworksExecution_free(nn_execution);
+#else
+  result = IE(ie_execution_start_compute)(ie_execution_);
 #endif
+  DLOG(INFO) << "ie_execution_start_compute: " << result;
 
   std::move(callback).Run(mojom::NOT_ERROR);
 }
