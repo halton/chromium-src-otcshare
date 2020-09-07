@@ -4,12 +4,10 @@
 // found in the LICENSE file.
 
 #include "ie_execution.h"
-
 #include <gna/gna_config.hpp>
 #include <utility>
 #include "constants.h"
 #include "ngraph/node.hpp"
-
 namespace InferenceEngine {
 
 namespace {
@@ -97,7 +95,7 @@ int32_t Execution::Init() {
       ie_core_ = std::move(ie_core);
     }
   } catch (const std::exception& ex) {
-    std::cout << "[IE] exception " << ex.what();
+    std::cout << "[IE] exception " << ex.what() << std::endl;
     initialized_ = false;
     return error_t::OP_FAILED;
   }
@@ -184,11 +182,11 @@ int32_t Execution::StartCompute() {
                 .as<PrecisionTrait<Precision::FP32>::value_type*>();
         if (operand.type == data_t::TENSOR_FLOAT32) {
           float* dst = reinterpret_cast<float*>(mapping);
-          result = Reorder<float>(dst, src, dims, false);
+          result = Reorder<float, float>(dst, src, dims, false);
         } else if (operand.type == data_t::TENSOR_INT32) {
           // V2 doesn't output TENSOR_INT32 type.
           int32_t* dst = reinterpret_cast<int32_t*>(mapping);
-          result = Reorder<int32_t>(dst, src, dims, false);
+          result = Reorder<int32_t, float>(dst, src, dims, false);
         }
         if (result != error_t::NOT_ERROR) {
           return error_t::BAD_DATA;
