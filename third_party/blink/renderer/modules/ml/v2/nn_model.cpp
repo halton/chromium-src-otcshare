@@ -18,6 +18,27 @@
 
 namespace blink {
 
+// Utils functions
+int32_t StringToOperandType(const String& operand_type) {
+  if (operand_type == "float32") {
+    return NeuralNetworkContext::kFloat32;
+  } else if (operand_type == "int32") {
+    return NeuralNetworkContext::kInt32;
+  } else if (operand_type == "uint32") {
+    return NeuralNetworkContext::kUint32;
+  } else if (operand_type == "tensor-float32") {
+    return NeuralNetworkContext::kTensorFloat32;
+  } else if (operand_type == "tensor-int32") {
+    return NeuralNetworkContext::kTensorInt32;
+  } else if (operand_type == "tensor-quant8-asymm") {
+    return NeuralNetworkContext::kTensorQuant8Asymm;
+  } else {
+    // float16 and tensor-float16 are not supported in Android NN API design.
+    NOTREACHED();
+  }
+  return 100;
+}
+
 namespace {
 
 void CopyDataToSharedBuffer(
@@ -60,12 +81,20 @@ void CopyDataToSharedBuffer(
   }
 }
 
+}  // namespace
+
+NNModel::NNModel(ml::mojom::blink::ModelPtrInfo info,
+                 NamedOperandVector* outputs) {
+  model_.Bind(std::move(info));
+  model_.set_connection_error_handler(
+      WTF::Bind(&NNModel::OnConnectionError, WrapWeakPersistent(this)));
+  FinishCreatingModel(std::move(outputs));
+}
+
+NNModel::~NNModel() = default;
+
 // Traversal graph inorder to create model.
-void BuildNeuralNetworkModel(
-    Operand* root,
-    HeapHashMap<WTF::String, Member<DOMArrayBufferView>>& buffer_views,
-    ml::mojom::blink::ModelInfoPtr& model_info,
-    HashMap<WTF::String, uint32_t>& name_index) {
+void NNModel::BuildNeuralNetworkModel(Operand* root) {
   // The index is sequence increase to index all operands in model.
   uint32_t index = 0;
   // the stack is used for traversaling model tree.
@@ -86,7 +115,7 @@ void BuildNeuralNetworkModel(
       } else {
         // Call the AddLayer virtual function to Add the operand with Android NN
         // API.
-        stack.back()->AddLayer(model_info, buffer_views, name_index, index);
+        stack.back()->AddLayer(this, index);
         // Set the operand as traversalled so that it doesn't push again.
         stack.back()->SetTraversal(true);
         // Pop the node.
@@ -97,37 +126,66 @@ void BuildNeuralNetworkModel(
       }
     }
   }
-
-  CopyDataToSharedBuffer(buffer_views, model_info);
 }
-
-}  // namespace
-
-NNModel::NNModel(ml::mojom::blink::ModelPtrInfo info,
-                 NamedOperandVector* outputs) {
-  model_.Bind(std::move(info));
-  model_.set_connection_error_handler(
-      WTF::Bind(&NNModel::OnConnectionError, WrapWeakPersistent(this)));
-  FinishCreatingModel(std::move(outputs));
-}
-
-NNModel::~NNModel() = default;
 
 void NNModel::FinishCreatingModel(NamedOperandVector* outputs) {
-  ml::mojom::blink::ModelInfoPtr model_info =
-      ml::mojom::blink::ModelInfo::New();
+  model_info_ = ml::mojom::blink::ModelInfo::New();
   for (uint32_t i = 0; i < outputs->size(); ++i) {
     NamedOperand* output = (*outputs)[i];
-    BuildNeuralNetworkModel(output->operand(), buffer_views_, model_info,
-                            name_index_);
-    // identifyInputsAndOutputs for outputs
-    model_info->outputs.push_back(output->operand()->Index());
-    // map the name and index that will be used in execution.
-    name_index_.insert(output->name(), i);
+    BuildNeuralNetworkModel(output->operand());
+    // identify output and map name and index that will be used in execution.
+    IdentifyOutput(output->name(), output->operand()->Index());
   }
-  model_->Finish(std::move(model_info),
+  CopyDataToSharedBuffer(buffer_views_, model_info_);
+
+  model_->Finish(std::move(model_info_),
                  WTF::Bind(&NNModel::OnResultCode, WrapPersistent(this)));
   return;
+}
+
+void NNModel::AddFuseOperand() {
+  model_info_->operands.push_back(ml::mojom::blink::Operand::New(
+      static_cast<int32_t>(NeuralNetworkContext::kInt32),
+      WTF::Vector<uint32_t>(), 0, 0));
+}
+
+void NNModel::AddUnspecifiedOperand() {
+  model_info_->operands.push_back(ml::mojom::blink::Operand::New(
+      static_cast<int32_t>(NeuralNetworkContext::kTensorFloat32),
+      WTF::Vector<uint32_t>(), 0, 0));
+}
+
+void NNModel::AddOperand(const OperandDescriptor* descriptor) {
+  model_info_->operands.push_back(ml::mojom::blink::Operand::New(
+      StringToOperandType(descriptor->type()),
+      descriptor->hasDimensions() ? descriptor->dimensions()
+                                  : WTF::Vector<uint32_t>(),
+      descriptor->hasScale() ? descriptor->scale() : 0,
+      descriptor->hasZeroPoint() ? descriptor->zeroPoint() : 0));
+}
+
+void NNModel::SetOperandValue(uint32_t index, DOMArrayBufferView* data) {
+  WTF::String index_str = WTF::String::Number(index);
+  model_info_->values.insert(
+      index_str, ml::mojom::blink::OperandValueInfo::New(index, 0, 0));
+  buffer_views_.insert(index_str, data);
+}
+
+void NNModel::AddOperation(int32_t type,
+                           const Vector<uint32_t>& inputs,
+                           const Vector<uint32_t>& outputs) {
+  model_info_->operations.push_back(
+      ml::mojom::blink::Operation::New(type, inputs, outputs));
+}
+
+void NNModel::IdentifyInput(const String& name, uint32_t index) {
+  name_index_.insert(name, model_info_->inputs.size());
+  model_info_->inputs.push_back(index);
+}
+
+void NNModel::IdentifyOutput(const String& name, uint32_t index) {
+  name_index_.insert(name, model_info_->outputs.size());
+  model_info_->outputs.push_back(index);
 }
 
 void NNModel::OnResultCode(int32_t result_code) {
@@ -146,7 +204,7 @@ ScriptPromise NNModel::createCompilation(ScriptState* script_state,
   }
 
   int32_t preference;
-  const WebString& operand_type =
+  const String& operand_type =
       options->hasPowerPreference() ? options->powerPreference() : "default";
   if (operand_type == "default") {
     preference = NeuralNetworkContext::kPreferFastSingleAnswer;

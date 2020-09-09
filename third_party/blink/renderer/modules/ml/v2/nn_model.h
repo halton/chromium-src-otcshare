@@ -18,6 +18,9 @@
 
 namespace blink {
 
+int32_t StringToOperandType(const String& operand_type);
+using NamedOperandVector = HeapVector<Member<NamedOperand>>;
+
 class NNModel final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
@@ -27,6 +30,16 @@ class NNModel final : public ScriptWrappable {
 
   ScriptPromise createCompilation(ScriptState*,
                                   const CompilationOptions* options);
+  void BuildNeuralNetworkModel(Operand*);
+  void AddFuseOperand();
+  void AddUnspecifiedOperand();
+  void AddOperand(const OperandDescriptor* descriptor);
+  void SetOperandValue(uint32_t index, DOMArrayBufferView* data);
+  void AddOperation(int32_t type,
+                    const Vector<uint32_t>& inputs,
+                    const Vector<uint32_t>& outputs);
+  void IdentifyInput(const String& name, uint32_t index);
+  void IdentifyOutput(const String& name, uint32_t index);
 
   void Trace(blink::Visitor*) const override;
 
@@ -40,6 +53,7 @@ class NNModel final : public ScriptWrappable {
   void OnConnectionError();
 
   ml::mojom::blink::ModelPtr model_;
+  ml::mojom::blink::ModelInfoPtr model_info_;
   HeapHashSet<Member<ScriptPromiseResolver>> requests_;
   HeapHashMap<WTF::String, Member<DOMArrayBufferView>> buffer_views_;
   // name_index_ is used for getting index for setInput/setOutput in execution

@@ -22,6 +22,8 @@ blink_modules_sources("v2") {
     "ops/constant.h",
     "ops/input.cc",
     "ops/input.h",
+    "ops/output.cc",
+    "ops/output.h",
   ]
 
   public_deps = [

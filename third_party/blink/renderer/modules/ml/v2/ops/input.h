@@ -2,17 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_ML_OPS_ADD_H_
-#define THIRD_PARTY_BLINK_RENDERER_MODULES_ML_OPS_ADD_H_
+#ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_ML_OPS_INPUT_H_
+#define THIRD_PARTY_BLINK_RENDERER_MODULES_ML_OPS_INPUT_H_
 
 #include <memory>
 
-#include "services/ml/public/mojom/model.mojom-blink.h"
+#include "third_party/blink/renderer/modules/ml/v2/nn_model.h"
 #include "third_party/blink/renderer/modules/ml/v2/operand.h"
 #include "third_party/blink/renderer/modules/ml/v2/operand_descriptor.h"
-#include "third_party/blink/renderer/platform/heap/heap_allocator.h"
-#include "third_party/blink/renderer/platform/wtf/hash_map.h"
-#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
 
@@ -21,11 +18,7 @@ class Input final : public Operand {
   Input(const String&, const OperandDescriptor*);
   ~Input() override = default;
 
-  void AddLayer(
-      ml::mojom::blink::ModelInfoPtr& model_info,
-      HeapHashMap<WTF::String, Member<DOMArrayBufferView>>& buffer_views,
-      HashMap<WTF::String, uint32_t>& name_index,
-      uint32_t& index) override;
+  void AddLayer(NNModel* model, uint32_t& index) override;
 
   // Interface required by garbage collection.
   void Trace(Visitor*) const override;
@@ -37,4 +30,4 @@ class Input final : public Operand {
 
 }  // namespace blink
 
-#endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_ML_OPS_ADD_H_
+#endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_ML_OPS_INPUT_H_

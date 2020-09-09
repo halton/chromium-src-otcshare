@@ -8,22 +8,18 @@ namespace blink {
 
 Constant::Constant(const OperandDescriptor* descriptor,
                    DOMArrayBufferView* data)
-    : Operand({}),
+    : Operand(),
       descriptor_(const_cast<OperandDescriptor*>(descriptor)),
       data_(data) {}
 
-void Constant::AddLayer(
-    ml::mojom::blink::ModelInfoPtr& model_info,
-    HeapHashMap<WTF::String, Member<DOMArrayBufferView>>& buffer_views,
-    HashMap<WTF::String, uint32_t>& name_index,
-    uint32_t& index) {
+void Constant::AddLayer(NNModel* model, uint32_t& index) {
   // Add operand for constant.
   uint32_t constant_index = index++;
   Operand::SetIndex(constant_index);
-  AddOperand(descriptor_, model_info);
+  model->AddOperand(descriptor_);
 
   // setOperandValue
-  SetOperandValue(constant_index, data_, buffer_views, model_info);
+  model->SetOperandValue(constant_index, data_);
 }
 
 void Constant::Trace(Visitor* visitor) const {

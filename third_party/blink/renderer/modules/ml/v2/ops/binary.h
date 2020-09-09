@@ -7,12 +7,9 @@
 
 #include <memory>
 
-#include "services/ml/public/mojom/model.mojom-blink.h"
-#include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer_view.h"
+#include "third_party/blink/renderer/modules/ml/v2/nn_model.h"
 #include "third_party/blink/renderer/modules/ml/v2/operand.h"
-#include "third_party/blink/renderer/platform/heap/heap_allocator.h"
-#include "third_party/blink/renderer/platform/wtf/hash_map.h"
-#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "third_party/blink/renderer/modules/ml/v2/ops/output.h"
 
 namespace blink {
 
@@ -25,16 +22,12 @@ enum BinaryType {
   kBinaryTypeMin,
 };
 
-class Binary final : public Operand {
+class Binary final : public Output {
  public:
   Binary(BinaryType, Operand*, Operand*);
   ~Binary() override = default;
 
-  void AddLayer(
-      ml::mojom::blink::ModelInfoPtr& model_info,
-      HeapHashMap<WTF::String, Member<DOMArrayBufferView>>& buffer_views,
-      HashMap<WTF::String, uint32_t>& name_index,
-      uint32_t& index) override;
+  void AddLayer(NNModel* model, uint32_t& index) override;
 
  private:
   BinaryType type_;
