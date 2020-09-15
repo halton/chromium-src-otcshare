@@ -1,0 +1,13 @@
+enum PowerPreference {
+  // Let the user agent decide the most suitable behavior. This is the default value.
+  "default",
+  // Prioritizes execution speed over other considerations e.g. power consumption
+  "high-performance",
+  // Prioritizes power consumption over other considerations e.g. execution speed
+  "low-power"
+};
+
+dictionary CompilationOptions {
+  // Compilation preference as related to power consumption level
+  PowerPreference powerPreference = "default";
+};

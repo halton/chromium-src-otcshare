@@ -1,0 +1,16 @@
+// Copyright 2020 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+interface NNContext {
+    // Operations
+    [RaisesException] Operand input(DOMString name, OperandDescriptor desc);
+    [RaisesException] Operand constant(OperandDescriptor desc, [AllowShared] ArrayBufferView data);
+
+    // element-wise binary operatioins.
+    Operand add(Operand primary, Operand secondary);
+    Operand mul(Operand primary, Operand secondary);
+
+    // Create Model
+    [CallWith=ScriptState] Promise<Model> createModel(sequence<NamedOperand> outputs);
+};
