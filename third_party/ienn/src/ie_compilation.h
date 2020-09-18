@@ -88,6 +88,23 @@ static short f32tof16(float x) {
 }
 
 template <typename T>
+int32_t CloneData(T* dst, const float* src, const std::vector<uint32_t>& dims) {
+  size_t size = product(dims);
+  if (std::is_same<T, float>::value || std::is_same<T, int32_t>::value) {
+    const size_t buffer_length = size * sizeof(T);
+    memcpy(static_cast<void*>(dst), static_cast<const void*>(src),
+           buffer_length);
+  } else if (std::is_same<T, int16_t>::value) {
+    for (size_t i = 0; i < size; ++i) {
+      dst[i] = f32tof16(src[i]);
+    }
+  } else {
+    return error_t::BAD_DATA;
+  }
+  return error_t::NOT_ERROR;
+}
+
+template <typename T>
 int32_t Reorder(T* dst,
                 const float* src,
                 const std::vector<uint32_t>& dims,
@@ -98,16 +115,7 @@ int32_t Reorder(T* dst,
     return error_t::BAD_DATA;
   }
   if (dims.size() == 1 || dims.size() == 2) {
-    size_t size = product(dims);
-    if (std::is_same<T, float>::value || std::is_same<T, int32_t>::value) {
-      const size_t buffer_length = size * sizeof(T);
-      memcpy(static_cast<void*>(dst), static_cast<const void*>(src),
-             buffer_length);
-    } else if (std::is_same<T, int16_t>::value) {
-      for (size_t i = 0; i < size; ++i) {
-        dst[i] = f32tof16(src[i]);
-      }
-    }
+    CloneData<T>(dst, src, dims);
   } else if (dims.size() == 3 || dims.size() == 4) {
     // dims is in NHWC
     const bool rank3 = dims.size() == 3;
@@ -162,6 +170,7 @@ class Compilation {
 
  private:
   int32_t AddConstant(uint32_t index,
+                      bool convert_dims,
                       std::vector<size_t> specified_dims = {});
   int32_t AddInput(uint32_t index);
   int32_t AddOutput(uint32_t index);

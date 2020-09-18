@@ -15,10 +15,9 @@ namespace InferenceEngine {
 using namespace ngraph;
 namespace {
 
-int32_t ConvertDims(const std::vector<uint32_t>& dimensions,
-                    std::vector<size_t>& dims) {
+std::vector<size_t> ConvertDims(const std::vector<uint32_t>& dimensions) {
   // IE default layout is NCHW
-  dims.resize(dimensions.size());
+  std::vector<size_t> dims(dimensions.size(), 0);
   if (dimensions.size() == 1) {
     dims[0] = dimensions[0];
   } else if (dimensions.size() == 2) {
@@ -35,12 +34,42 @@ int32_t ConvertDims(const std::vector<uint32_t>& dimensions,
     dims[1] = dimensions[3];
     dims[2] = dimensions[1];
     dims[3] = dimensions[2];
-  } else {
-    std::cout << "Tensor rank " << dimensions.size() << " is not supproted"
-              << std::endl;
-    return error_t::BAD_DATA;
   }
-  return error_t::NOT_ERROR;
+  return dims;
+}
+
+template <typename T>
+int32_t CopyDataToBuffer(T* dst,
+                         const float* src,
+                         const std::vector<uint32_t>& dims,
+                         bool reorder) {
+  uint32_t result;
+  if (reorder) {
+    result = Reorder<T>(dst, src, dims);
+  } else {
+    result = CloneData<T>(dst, src, dims);
+  }
+  return result;
+}
+
+Shape CreateShape(const std::vector<uint32_t>& dimensions) {
+  std::vector<size_t> dims;
+  dims.reserve(dimensions.size());
+  for (auto dim : dimensions) {
+    dims.push_back(dim);
+  }
+  return Shape(dims);
+}
+
+// Transpose NHWC <=> NCHW.
+ngraph::Output<ngraph::Node> TransposeLayout(ngraph::Output<ngraph::Node> node,
+                                             bool nhwc_to_nchw) {
+  AxisVector order =
+      nhwc_to_nchw ? AxisVector{0, 3, 1, 2} : AxisVector{0, 2, 3, 1};
+  const auto order_node =
+      op::Constant::create(element::i64, Shape{order.size()}, order);
+  auto transpose_node = std::make_shared<op::v1::Transpose>(node, order_node);
+  return transpose_node->output(0);
 }
 
 std::shared_ptr<ngraph::Node> AddActivationByFusedCode(
@@ -141,18 +170,11 @@ int32_t Compilation::Compile() {
     network_.reset(new CNNNetwork(ngraph_function));
     InputsDataMap input_info(network_->getInputsInfo());
     for (auto itr : input_info) {
-      if (itr.second->getLayout() == Layout::NCHW) {
-        itr.second->setLayout(Layout::NHWC);
-      }
       itr.second->setPrecision(Precision::FP32);
     }
 
     OutputsDataMap output_info(network_->getOutputsInfo());
     for (auto itr : output_info) {
-      SizeVector dims = itr.second->getTensorDesc().getDims();
-      if (itr.second->getLayout() == Layout::NCHW) {
-        itr.second->setLayout(Layout::NHWC);
-      }
       itr.second->setPrecision(Precision::FP32);
     }
   } catch (const std::exception& ex) {
@@ -163,18 +185,13 @@ int32_t Compilation::Compile() {
 }
 
 int32_t Compilation::AddInput(uint32_t index) {
-  const Operand& operand = model_->operands[index];
-  SizeVector dims;
-  int32_t result = ConvertDims(operand.dimensions, dims);
-  if (result != error_t::NOT_ERROR) {
-    return result;
-  }
   try {
     // MYRIAD only supports FP16 models, but it can accept FP32 inputs. So we
     // can also set the inputs precison to FP32.
+    const Operand& operand = model_->operands[index];
     auto input_node = std::make_shared<op::Parameter>(
         preference_ != PREFER_LOW_POWER ? element::f32 : element::f16,
-        Shape(dims));
+        CreateShape(operand.dimensions));
     index_op_map_[index] = input_node->output(0);
     ngraph_inputs_.push_back(input_node);
   } catch (const std::exception& ex) {
@@ -200,38 +217,31 @@ int32_t Compilation::AddOutput(uint32_t index) {
 }
 
 int32_t Compilation::AddConstant(uint32_t index,
+                                 bool reorder,
                                  std::vector<size_t> specified_dims) {
   try {
     const Operand& operand = model_->operands[index];
-    SizeVector dims;
-    int32_t result = ConvertDims(operand.dimensions, dims);
-    if (result != error_t::NOT_ERROR) {
-      return result;
-    }
-    size_t rank = dims.size();
-    Layout layout =
-        rank == 1
-            ? Layout::C
-            : rank == 2 ? Layout::HW : rank == 3 ? Layout::CHW : Layout::NCHW;
+    SizeVector dims = reorder ? ConvertDims(operand.dimensions)
+                              : CreateShape(operand.dimensions);
     // GNA also only support FP32 representing with PREFER_ULTRA_LOW_POWER.
     bool fp32_precision = preference_ != PREFER_LOW_POWER;
     Blob::Ptr blob;
     if (fp32_precision) {
       // GNA only accepts FP32 precision, cpu/gpu use FP32 currently.
-      blob = make_shared_blob<float>({Precision::FP32, dims, layout});
+      blob = make_shared_blob<float>({Precision::FP32, dims, Layout::ANY});
     } else {
       // MYRIAD only accepts FP16 precision.
-      blob = make_shared_blob<int16_t>({Precision::FP16, dims, layout});
+      blob = make_shared_blob<int16_t>({Precision::FP16, dims, Layout::ANY});
     }
     blob->allocate();
     const float* src =
         reinterpret_cast<const float*>(model_->values[index].buffer);
     std::shared_ptr<op::Constant> constant_node;
-    SizeVector const_dims =
-        specified_dims.size() == 0 ? dims : specified_dims;
+    uint32_t result;
+    SizeVector const_dims = specified_dims.size() == 0 ? dims : specified_dims;
     if (fp32_precision) {
       float* dst = blob->buffer().as<float*>();
-      result = Reorder<float>(dst, src, operand.dimensions);
+      result = CopyDataToBuffer<float>(dst, src, operand.dimensions, reorder);
       if (result != error_t::NOT_ERROR) {
         return result;
       }
@@ -241,7 +251,7 @@ int32_t Compilation::AddConstant(uint32_t index,
           element::f32, Shape(const_dims), blob->buffer().as<float*>());
     } else {
       int16_t* dst = blob->buffer().as<int16_t*>();
-      result = Reorder<int16_t>(dst, src, operand.dimensions);
+      result = CopyDataToBuffer<int16_t>(dst, src, operand.dimensions, reorder);
       if (result != error_t::NOT_ERROR) {
         return result;
       }
@@ -267,7 +277,7 @@ int32_t Compilation::AddElementwise(const Operation& operation) {
     if (index_op_map_.find(input_index) == index_op_map_.end()) {
       // Setup constants
       if (model_->values.find(input_index) != model_->values.end()) {
-        result = AddConstant(input_index);
+        result = AddConstant(input_index, false);
         if (result != error_t::NOT_ERROR) {
           return result;
         }
@@ -301,17 +311,17 @@ int32_t Compilation::AddElementwise(const Operation& operation) {
 }
 
 int32_t Compilation::AddConvolution(const Operation& operation) {
-  // Setup convolution params.
-  ConvParams params;
-  int32_t result = GetConvParams(model_, operation, params);
-  if (result != error_t::NOT_ERROR)
-    return result;
   const uint32_t input_index = operation.inputs[0];
   if (index_op_map_.find(input_index) == index_op_map_.end()) {
     std::cout << "The layer for operand index " << input_index
               << " is not ready";
     return error_t::BAD_DATA;
   }
+  // Setup convolution params.
+  ConvParams params;
+  int32_t result = GetConvParams(model_, operation, params);
+  if (result != error_t::NOT_ERROR)
+    return result;
   try {
     std::vector<ptrdiff_t> padBegin{params.padding_top, params.padding_left};
     std::vector<ptrdiff_t> padEnd{params.padding_bottom, params.padding_right};
@@ -322,46 +332,33 @@ int32_t Compilation::AddConvolution(const Operation& operation) {
     const uint32_t bias_index = operation.inputs[2];
     std::shared_ptr<ngraph::Node> conv_node;
 
+    auto conv_input_node =
+        params.nhwc_layout ? TransposeLayout(index_op_map_[input_index], true)
+                           : index_op_map_[input_index];
     if (params.depthwise) {
-      if (params.depthwise_multiplier != 1) {
-        std::cout << "depthwise_multiplier " << params.depthwise_multiplier
-                  << " is not supported";
-        return error_t::BAD_DATA;
-      }
-
-      if (params.output_channel !=
-          params.input_channel * params.depthwise_multiplier) {
-        std::cout
-            << "Failed assertion: outputFeatureChannels "
-            << params.output_channel
-            << " in IE depthwise convolution descriptor must be multiplie of "
-               "inFeatureChannels "
-            << params.input_channel;
-        return error_t::BAD_DATA;
-      }
       SizeVector weights_dims{params.depth_out, 1, 1, params.filter_height,
                               params.filter_width};
-      AddConstant(weights_index, weights_dims);
+      AddConstant(weights_index, params.nhwc_layout, weights_dims);
       conv_node = std::make_shared<op::v1::GroupConvolution>(
-          index_op_map_[input_index], index_op_map_[weights_index],
-          Strides(strides), CoordinateDiff(padBegin), CoordinateDiff(padEnd),
-          Strides(dilations));
+          conv_input_node, index_op_map_[weights_index], Strides(strides),
+          CoordinateDiff(padBegin), CoordinateDiff(padEnd), Strides(dilations));
     } else {
-      AddConstant(weights_index);
+      AddConstant(weights_index, params.nhwc_layout);
       conv_node = std::make_shared<op::v1::Convolution>(
-          index_op_map_[input_index], index_op_map_[weights_index],
-          Strides(strides), CoordinateDiff(padBegin), CoordinateDiff(padEnd),
-          Strides(dilations));
+          conv_input_node, index_op_map_[weights_index], Strides(strides),
+          CoordinateDiff(padBegin), CoordinateDiff(padEnd), Strides(dilations));
     }
     // add bias and fused-code
     const uint32_t output_index = operation.outputs[0];
     // Since cldnn doesn't support mixed layout
     // We reshape the bias to 4D NCHW aligned with conv_node
-    AddConstant(bias_index, {1, params.bias_length, 1, 1});
+    AddConstant(bias_index, false, {1, params.bias_length, 1, 1});
     auto add_node = std::make_shared<op::v1::Add>(conv_node->output(0),
                                                   index_op_map_[bias_index]);
-    index_op_map_[output_index] =
+    auto fused_node =
         AddActivationByFusedCode(params.fuse_code, add_node)->output(0);
+    index_op_map_[output_index] =
+        params.nhwc_layout ? TransposeLayout(fused_node, false) : fused_node;
   } catch (const std::exception& ex) {
     std::cout << "[IE] failed to add pooling layer " << ex.what();
     return error_t::OP_FAILED;
@@ -370,23 +367,27 @@ int32_t Compilation::AddConvolution(const Operation& operation) {
 }
 
 int32_t Compilation::AddPooling(const Operation& operation) {
-  // Setup pooling params.
-  PoolingParams params;
-  int32_t result = GetPoolingParams(model_, operation, params);
-  if (result != error_t::NOT_ERROR)
-    return result;
   const uint32_t input_index = operation.inputs[0];
   if (index_op_map_.find(input_index) == index_op_map_.end()) {
     std::cout << "The layer for operand index " << input_index
               << " is not ready";
     return error_t::BAD_DATA;
   }
+  // Setup pooling params.
+  PoolingParams params;
+  int32_t result =
+      GetPoolingParams(model_, operation, index_op_map_[input_index], params);
+  if (result != error_t::NOT_ERROR)
+    return result;
   try {
+    auto pooling_input_node =
+        params.nhwc_layout ? TransposeLayout(index_op_map_[input_index], true)
+                           : index_op_map_[input_index];
     const uint32_t output_index = operation.outputs[0];
     std::shared_ptr<ngraph::Node> pooling_node;
     if (operation.type == operation_t::MAX_POOL_2D) {
       pooling_node = std::make_shared<op::v1::MaxPool>(
-          index_op_map_[input_index],
+          pooling_input_node,
           std::vector<size_t>{params.stride_width, params.stride_height},
           Shape{params.padding_top, params.padding_left},
           Shape{params.padding_bottom, params.padding_right},
@@ -394,15 +395,17 @@ int32_t Compilation::AddPooling(const Operation& operation) {
           op::RoundingType::FLOOR, op::PadType::EXPLICIT);
     } else {
       pooling_node = std::make_shared<op::v1::AvgPool>(
-          index_op_map_[input_index],
+          pooling_input_node,
           std::vector<size_t>{params.stride_width, params.stride_height},
           Shape{params.padding_top, params.padding_left},
           Shape{params.padding_bottom, params.padding_right},
           std::vector<size_t>{params.filter_height, params.filter_width}, true,
           op::RoundingType::FLOOR, op::PadType::EXPLICIT);
     }
-    index_op_map_[output_index] =
+    auto fused_node =
         AddActivationByFusedCode(params.fuse_code, pooling_node)->output(0);
+    index_op_map_[output_index] =
+        params.nhwc_layout ? TransposeLayout(fused_node, false) : fused_node;
   } catch (const std::exception& ex) {
     std::cout << "[IE] failed to add pooling layer " << ex.what();
     return error_t::OP_FAILED;
@@ -429,9 +432,19 @@ int32_t Compilation::AddSoftmax(const Operation& operation) {
   }
 
   const uint32_t output_index = operation.outputs[0];
+  // For Android NNAPI, index = 2: An optional ANEURALNETWORKS_INT32 scalar,
+  // default to -1, specifying the dimension the activation would be performed
+  // on. Negative index is used to specify axis from the end (e.g. -1 for the
+  // last axis).
+  // For IE, There is no scaling factor, It's axis position (0-based) on which
+  // to calculate the softmax.
+  // For new Spec, it only support 2-D input tensor along axis 1.
+  auto shape = index_op_map_[input_index].get_shape();
+  // Only Android NNAPI support 4 rank to pass android test case.
+  size_t axis = shape.size() == 4 ? 3 : 1;
   try {
-    auto softmax_node = std::make_shared<op::v1::Softmax>(
-        index_op_map_[input_index], params.beta);
+    auto softmax_node =
+        std::make_shared<op::v1::Softmax>(index_op_map_[input_index], axis);
     index_op_map_[output_index] = softmax_node->output(0);
   } catch (const std::exception& ex) {
     std::cout << "[IE] failed to add softmax node " << ex.what() << std::endl;
@@ -451,13 +464,9 @@ int32_t Compilation::AddReshape(const Operation& operation) {
   try {
     const uint32_t output_index = operation.outputs[0];
     const Operand& output = model_->operands[output_index];
-    SizeVector dims;
-    int32_t result = ConvertDims(output.dimensions, dims);
-    if (result != error_t::NOT_ERROR) {
-      return result;
-    }
-    auto target_shape_node = std::make_shared<op::Constant>(
-        element::i64, Shape{output.dimensions.size()}, dims);
+    SizeVector dims = CreateShape(output.dimensions);
+    auto target_shape_node =
+        std::make_shared<op::Constant>(element::i64, Shape{dims.size()}, dims);
     auto reshape_node = std::make_shared<op::v1::Reshape>(
         index_op_map_[input_index], target_shape_node->output(0), true);
     index_op_map_[output_index] = reshape_node->output(0);
@@ -481,7 +490,7 @@ int32_t Compilation::AddConcatenation(const Operation& operation) {
     if (index_op_map_.find(input_index) == index_op_map_.end()) {
       // Setup constants
       if (model_->values.find(input_index) != model_->values.end()) {
-        result = AddConstant(input_index);
+        result = AddConstant(input_index, false);
         if (result != error_t::NOT_ERROR) {
           return result;
         }
@@ -493,38 +502,11 @@ int32_t Compilation::AddConcatenation(const Operation& operation) {
     }
     input_nodes.push_back(index_op_map_[input_index].get_node_shared_ptr());
   }
-  int axis = 0;
-  const uint32_t rank = model_->operands[operation.inputs[0]].dimensions.size();
-  if (rank == 1 || rank == 2) {
-    axis = params.axis;
-  } else if (rank == 3) {
-    // HWC -> CHW
-    if (params.axis == 0) {
-      axis = 1;
-    } else if (params.axis == 1) {
-      axis = 2;
-    } else if (params.axis == 2) {
-      axis = 0;
-    }
-  } else if (rank == 4) {
-    // NHWC -> NCHW
-    if (params.axis == 0) {
-      axis = 0;
-    } else if (params.axis == 1) {
-      axis = 2;
-    } else if (params.axis == 2) {
-      axis = 3;
-    } else if (params.axis == 3) {
-      axis = 1;
-    }
-  } else {
-    std::cout << "rank " << rank << " is not supported.";
-    return error_t::BAD_DATA;
-  }
 
   const uint32_t output_index = operation.outputs[0];
   try {
-    auto concat_node = std::make_shared<ngraph::op::Concat>(input_nodes, axis);
+    auto concat_node =
+        std::make_shared<ngraph::op::Concat>(input_nodes, params.axis);
     index_op_map_[output_index] = concat_node->output(0);
   } catch (const std::exception& ex) {
     std::cout << "[IE] failed to add concat layer " << ex.what() << std::endl;
@@ -549,8 +531,8 @@ int32_t Compilation::AddFullyConnected(const Operation& operation) {
   try {
     const uint32_t weights_index = operation.inputs[1];
     const uint32_t bias_index = operation.inputs[2];
-    AddConstant(weights_index);
-    AddConstant(bias_index);
+    AddConstant(weights_index, true);
+    AddConstant(bias_index, true);
     std::vector<int32_t> dims{params.input_batch_size, params.input_size};
     auto target_shape_node =
         std::make_shared<op::Constant>(element::i64, Shape{2}, dims);
@@ -596,12 +578,17 @@ int32_t Compilation::AddResizeBilinear(const Operation& operation) {
 
   auto target_shape_node = op::Constant::create<int64_t>(
       element::i64, Shape{2}, {params.new_height, params.new_width});
-
+  auto resize_input_node =
+      params.nhwc_layout ? TransposeLayout(index_op_map_[input_index], true)
+                         : index_op_map_[input_index];
   try {
     const uint32_t output_index = operation.outputs[0];
-    auto resize_node = std::make_shared<op::v0::Interpolate>(
-        index_op_map_[input_index], target_shape_node->output(0), attrs);
-    index_op_map_[output_index] = resize_node->output(0);
+    auto resize_node =
+        std::make_shared<op::v0::Interpolate>(
+            resize_input_node, target_shape_node->output(0), attrs)
+            ->output(0);
+    index_op_map_[output_index] =
+        params.nhwc_layout ? TransposeLayout(resize_node, false) : resize_node;
   } catch (const std::exception& ex) {
     std::cout << "[IE] failed to add resize bilinear layer " << ex.what();
     return error_t::OP_FAILED;
@@ -615,6 +602,7 @@ int32_t Compilation::AddArgmax(const Operation& operation) {
   if (result != error_t::NOT_ERROR)
     return error_t::BAD_DATA;
 
+  // Only support NHWC layout for Argmax.
   if (params.axis != 3) {
     std::cout << "Only support axis for channel.";
     return error_t::BAD_DATA;
@@ -630,7 +618,7 @@ int32_t Compilation::AddArgmax(const Operation& operation) {
     const uint32_t output_index = operation.outputs[0];
     const auto k = op::Constant::create(element::i64, Shape{}, {1});
     auto topk_node = std::make_shared<op::v1::TopK>(
-        index_op_map_[input_index], k->output(0), 1, "max", "value");
+        index_op_map_[input_index], k->output(0), 3, "max", "value");
     // output(1) with top k indices for each slice along axis dimension
     index_op_map_[output_index] = topk_node->output(1);
   } catch (const std::exception& ex) {
