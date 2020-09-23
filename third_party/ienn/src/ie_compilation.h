@@ -181,9 +181,12 @@ class Compilation {
   int32_t AddReshape(const Operation& operation);
   int32_t AddConcatenation(const Operation& operation);
   int32_t AddFullyConnected(const Operation& operation);
+  int32_t AddFullyConnectedV1(const Operation& operation);
   int32_t AddResizeBilinear(const Operation& operation);
   int32_t AddSigmoid(const Operation& operation);
   int32_t AddArgmax(const Operation& operation);
+  int32_t AddActivation(const Operation& operation);
+  int32_t AddTranspose(const Operation& operation);
 
  private:
   friend class Execution;

@@ -31,8 +31,8 @@ static std::unique_ptr<Core> s_ie_core = nullptr;
 static std::unique_ptr<ExecutableNetwork> s_gna_execution = nullptr;
 static std::unique_ptr<InferRequest> s_gna_infer_request = nullptr;
 
-Execution::Execution(std::unique_ptr<Compilation> compilation)
-    : compilation_(std::move(compilation)),
+Execution::Execution(std::shared_ptr<Compilation> compilation)
+    : compilation_(compilation),
       infer_request_(nullptr),
       execution_(nullptr),
       ie_core_(nullptr) {}

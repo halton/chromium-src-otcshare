@@ -492,4 +492,54 @@ int32_t GetArgmaxParams(ModelInfoPtr model,
   return NOT_ERROR;
 }
 
+int32_t GetReshapeParams(ModelInfoPtr model,
+                         const Operation& operation,
+                         ReshapeParams& params) {
+  const uint32_t new_shape_index = operation.inputs[1];
+  // The shape is 1-D tensor.
+  const Operand& new_shape = model->operands[new_shape_index];
+  // if (new_shape.dimensions.size() != 1) {
+  //   return BAD_DATA;
+  // }
+  size_t length = new_shape.dimensions[0];
+  const int32_t* src =
+      reinterpret_cast<const int32_t*>(model->values[new_shape_index].buffer);
+  params.new_shape.reserve(length);
+  for (int i = 0; i < length; ++i) {
+    params.new_shape.push_back(src[i]);
+  }
+  return NOT_ERROR;
+}
+
+int32_t GetTransposeParams(ModelInfoPtr model,
+                           const Operation& operation,
+                           const ngraph::Output<ngraph::Node>& input_node,
+                           TransposeParams& params) {
+  auto input_shape = input_node.get_shape();
+  params.permutation.reserve(input_shape.size());
+  if (operation.inputs.size() == 1) {
+    // When it’s not specified, it’s set to [N-1...0].
+    for (int i = 0; i < input_shape.size(); ++i) {
+      params.permutation.insert(params.permutation.begin(), i);
+    }
+    return NOT_ERROR;
+  }
+  const uint32_t permutation_index = operation.inputs[1];
+  // The permutation is 1-D tensor.
+  auto dimensions = model->operands[permutation_index].dimensions;
+  if (dimensions.size() != 1) {
+    return BAD_DATA;
+  }
+  size_t length = dimensions[0];
+  if (length != input_shape.size()) {
+    return BAD_DATA;
+  }
+  const int32_t* src =
+      reinterpret_cast<const int32_t*>(model->values[permutation_index].buffer);
+  for (int i = 0; i < length; ++i) {
+    params.permutation.push_back(src[i]);
+  }
+  return NOT_ERROR;
+}
+
 }  // namespace InferenceEngine
