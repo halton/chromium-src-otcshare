@@ -13,22 +13,18 @@
 namespace InferenceEngine {
 
 namespace {
-std::vector<uint32_t> ConvertDimension(const std::vector<size_t>& dimensions) {
-  if (dimensions.size() == 3) {
-    // CHW -> HWC
-    return {static_cast<uint32_t>(dimensions[1]),
-            static_cast<uint32_t>(dimensions[2]),
-            static_cast<uint32_t>(dimensions[0])};
-  } else if (dimensions.size() == 4) {
-    // NCHW -> NHWC
-    return {static_cast<uint32_t>(dimensions[0]),
-            static_cast<uint32_t>(dimensions[2]),
-            static_cast<uint32_t>(dimensions[3]),
-            static_cast<uint32_t>(dimensions[1])};
+
+std::vector<uint32_t> GetDimensions(const std::vector<size_t>& dimensions) {
+  std::vector<uint32_t> dims;
+  dims.reserve(dimensions.size());
+  for (auto dim : dimensions) {
+    dims.push_back(dim);
   }
-  return {};
+  return dims;
 }
+
 }  // namespace
+
 // TODO(Junwei): GNA device only be opened for one instance of
 // ExecutableNetwork, there will be memory leak for these static objects.
 static std::unique_ptr<Core> s_ie_core = nullptr;
@@ -134,7 +130,6 @@ int32_t Execution::StartCompute() {
   }
   try {
     int32_t result;
-    uint32_t total_length = 0;
     InferRequest* infer_request =
         compilation_->GetPreference() == prefer_t::PREFER_ULTRA_LOW_POWER
             ? s_gna_infer_request.get()
@@ -144,9 +139,6 @@ int32_t Execution::StartCompute() {
     for (size_t i = 0; i < model->inputs.size(); ++i) {
       size_t index = model->inputs[i];
       const Operand& operand = model->operands[index];
-      const uint32_t offset = total_length;
-      const uint32_t length = input_data_[i].length;
-      total_length += length;
       if (operand.type != data_t::TENSOR_FLOAT32) {
         std::cout << "Only TENSOR_FLOAT32 operand type is supported";
         return error_t::BAD_DATA;
@@ -157,18 +149,8 @@ int32_t Execution::StartCompute() {
       float* dst = input_blob->buffer()
                        .as<PrecisionTrait<Precision::FP32>::value_type*>();
       const float* src = reinterpret_cast<const float*>(input_data_[i].buffer);
-      // ngraph can't support setLayout of hwc
-      // so we need to reorder hwc=>chw
-      if (operand.dimensions.size() == 3) {
-        // Only reorder HWC to CHW
-        result = Reorder<float>(dst, src, operand.dimensions);
-        if (result != error_t::NOT_ERROR) {
-          return error_t::BAD_DATA;
-        }
-      } else {
-        const size_t length = product(operand.dimensions) * sizeof(float);
-        memcpy(static_cast<void*>(dst), static_cast<const void*>(src), length);
-      }
+      memcpy(static_cast<void*>(dst), static_cast<const void*>(src),
+             input_data_[i].length);
     }
 
     infer_request->Infer();
@@ -190,13 +172,13 @@ int32_t Execution::StartCompute() {
       Blob::Ptr output_blob = infer_request->GetBlob(output_name);
       // shape is NCHW layout.
       auto shape = compilation_->index_op_map_[index].get_shape();
-      std::vector<uint32_t> dims = ConvertDimension(shape);
+      std::vector<uint32_t> dims = GetDimensions(shape);
       // "dims.size() == 3" because ngraph can't support setLayout of hwc
       // so we need to reorder chw=>hwc.
       // "output_name.find("TopK") != std::string::npos" Since polyfill only
       // support 3D output for argmax and the layout of the 3D output is nhw so
       // we need to reshape nhw to original nhwc.
-      if (dims.size() == 3 || output_name.find("TopK") != std::string::npos) {
+      if (output_name.find("TopK") != std::string::npos) {
         const float* src =
             output_blob->buffer()
                 .as<PrecisionTrait<Precision::FP32>::value_type*>();
