@@ -50,6 +50,7 @@ typedef enum {
   SPACE_TO_DEPTH = 26,
   SVDF = 27,
   TANH = 28,
+  TRANSPOSE = 37,
   ARGMAX = 39,
   PRELU = 71,
   ATROUS_CONV_2D = 10003,

@@ -89,6 +89,16 @@ std::shared_ptr<ngraph::Node> AddActivationByFusedCode(
   }
   return activation_node;
 }
+
+ngraph::Output<ngraph::Node> Reshape(ngraph::Output<ngraph::Node>& input_node,
+                                     std::vector<size_t> new_shape) {
+  auto target_shape_node = std::make_shared<op::Constant>(
+      element::i64, Shape{new_shape.size()}, new_shape);
+  auto reshape_node = std::make_shared<op::v1::Reshape>(
+      input_node, target_shape_node->output(0), true);
+  return reshape_node->output(0);
+}
+
 }  // namespace
 
 Compilation::Compilation(ModelInfoPtr model)
@@ -145,6 +155,10 @@ int32_t Compilation::Compile() {
       result = AddSigmoid(operation);
     } else if (type == operation_t::ARGMAX) {
       result = AddArgmax(operation);
+    } else if (type == operation_t::RELU) {
+      result = AddActivation(operation);
+    } else if (type == operation_t::TRANSPOSE) {
+      result = AddTranspose(operation);
     } else {
       std::cout << "Operation type " << type << " is not supported."
                 << std::endl;
@@ -455,6 +469,11 @@ int32_t Compilation::AddSoftmax(const Operation& operation) {
 }
 
 int32_t Compilation::AddReshape(const Operation& operation) {
+  ReshapeParams params;
+  int32_t result = GetReshapeParams(model_, operation, params);
+  if (result != error_t::NOT_ERROR)
+    return result;
+
   const uint32_t input_index = operation.inputs[0];
   if (index_op_map_.find(input_index) == index_op_map_.end()) {
     std::cout << "The layer for operand index " << input_index
@@ -463,13 +482,8 @@ int32_t Compilation::AddReshape(const Operation& operation) {
   }
   try {
     const uint32_t output_index = operation.outputs[0];
-    const Operand& output = model_->operands[output_index];
-    SizeVector dims = CreateShape(output.dimensions);
-    auto target_shape_node =
-        std::make_shared<op::Constant>(element::i64, Shape{dims.size()}, dims);
-    auto reshape_node = std::make_shared<op::v1::Reshape>(
-        index_op_map_[input_index], target_shape_node->output(0), true);
-    index_op_map_[output_index] = reshape_node->output(0);
+    index_op_map_[output_index] =
+        Reshape(index_op_map_[input_index], params.new_shape);
   } catch (const std::exception& ex) {
     std::cout << "[IE] failed to add reshape layer " << ex.what();
     return error_t::OP_FAILED;
@@ -517,6 +531,49 @@ int32_t Compilation::AddConcatenation(const Operation& operation) {
 }
 
 int32_t Compilation::AddFullyConnected(const Operation& operation) {
+  // The rank of inputs is 4 for FullyConnected Android NN API, we extend a rank
+  // to identify V2 Spec to implement MatMul Operations.
+  if (operation.inputs.size() == 4) {
+    return AddFullyConnectedV1(operation);
+  }
+  const uint32_t primary_index = operation.inputs[0];
+  if (index_op_map_.find(primary_index) == index_op_map_.end()) {
+    std::cout << "The layer for operand index " << primary_index
+              << " is not ready";
+    return error_t::BAD_DATA;
+  }
+  try {
+    auto primary_node = index_op_map_[primary_index];
+    auto primary_shape = primary_node.get_shape();
+    if (primary_shape.size() == 1) {
+      // If a is 1-D, it is converted to a 2-D tensor by prepending a 1 to its
+      // dimensions.
+      primary_node = Reshape(primary_node, {1, primary_shape[0]});
+    }
+
+    const uint32_t secondary_index = operation.inputs[1];
+    if (model_->values.find(secondary_index) != model_->values.end()) {
+      AddConstant(secondary_index, false);
+    }
+    auto secondary_node = index_op_map_[secondary_index];
+    auto secondary_shape = secondary_node.get_shape();
+    if (secondary_shape.size() == 1) {
+      // If b is 1-D, it is converted to a 2-D tensor by by appending a 1 to its
+      // dimensions.
+      secondary_node = Reshape(secondary_node, {secondary_shape[0], 1});
+    }
+    auto matmul_node = std::make_shared<op::v0::MatMul>(
+        primary_node, secondary_node, false, false);
+    const uint32_t output_index = operation.outputs[0];
+    index_op_map_[output_index] = matmul_node->output(0);
+  } catch (const std::exception& ex) {
+    std::cout << "[IE] failed to add fc layer " << ex.what();
+    return error_t::OP_FAILED;
+  }
+  return error_t::NOT_ERROR;
+}
+
+int32_t Compilation::AddFullyConnectedV1(const Operation& operation) {
   // Setup fully connected params.
   FullyConnectedParams params;
   int32_t result = GetFullyConnectedParams(model_, operation, params);
@@ -533,15 +590,11 @@ int32_t Compilation::AddFullyConnected(const Operation& operation) {
     const uint32_t bias_index = operation.inputs[2];
     AddConstant(weights_index, true);
     AddConstant(bias_index, true);
-    std::vector<int32_t> dims{params.input_batch_size, params.input_size};
-    auto target_shape_node =
-        std::make_shared<op::Constant>(element::i64, Shape{2}, dims);
-    auto reshaped_input_node = std::make_shared<op::v1::Reshape>(
-        index_op_map_[input_index], target_shape_node->output(0), true);
+    std::vector<size_t> dims{params.input_batch_size, params.input_size};
     // Need to transpose the weights.
     auto matmul_node = std::make_shared<op::v0::MatMul>(
-        reshaped_input_node->output(0), index_op_map_[weights_index], false,
-        true);
+        Reshape(index_op_map_[input_index], dims), index_op_map_[weights_index],
+        false, true);
     auto add_node = std::make_shared<op::v1::Add>(matmul_node->output(0),
                                                   index_op_map_[bias_index]);
     const uint32_t output_index = operation.outputs[0];
@@ -644,6 +697,48 @@ int32_t Compilation::AddSigmoid(const Operation& operation) {
     std::cout << "[IE] failed to add sigmoid layer " << ex.what();
     return error_t::OP_FAILED;
   }
+  return error_t::NOT_ERROR;
+}
+
+int32_t Compilation::AddActivation(const Operation& operation) {
+  const uint32_t input_index = operation.inputs[0];
+  if (index_op_map_.find(input_index) == index_op_map_.end()) {
+    std::cout << "The layer for operand index " << input_index
+              << " is not ready";
+    return error_t::BAD_DATA;
+  }
+  auto relu_node = std::make_shared<op::v0::Relu>(index_op_map_[input_index]);
+  const uint32_t output_index = operation.outputs[0];
+  index_op_map_[output_index] = relu_node->output(0);
+  return error_t::NOT_ERROR;
+}
+
+int32_t Compilation::AddTranspose(const Operation& operation) {
+  int32_t result;
+  const uint32_t input_index = operation.inputs[0];
+  if (model_->values.find(input_index) != model_->values.end()) {
+    result = AddConstant(input_index, false);
+    if (result != error_t::NOT_ERROR) {
+      return result;
+    }
+  }
+  if (index_op_map_.find(input_index) == index_op_map_.end()) {
+    std::cout << "The layer for operand index " << input_index
+              << " is not ready";
+    return error_t::BAD_DATA;
+  }
+  TransposeParams params;
+  auto input_node = index_op_map_[input_index];
+  result = GetTransposeParams(model_, operation, input_node, params);
+  if (result != error_t::NOT_ERROR)
+    return error_t::BAD_DATA;
+
+  const auto order_node = op::Constant::create(
+      element::i64, Shape{params.permutation.size()}, params.permutation);
+  auto transpose_node =
+      std::make_shared<op::v1::Transpose>(input_node, order_node);
+  const uint32_t output_index = operation.outputs[0];
+  index_op_map_[output_index] = transpose_node->output(0);
   return error_t::NOT_ERROR;
 }
 

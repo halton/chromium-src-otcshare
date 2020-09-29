@@ -26,7 +26,7 @@ struct ie_model {
 };
 
 struct ie_compilation {
-  std::unique_ptr<IE::Compilation> object;
+  std::shared_ptr<IE::Compilation> object;
 };
 
 struct ie_execution {
@@ -155,7 +155,7 @@ int32_t ie_execution_create(ie_compilation_t* compliation,
     return IE::error_t::BAD_DATA;
   }
   *execution = new ie_execution_t;
-  (*execution)->object.reset(new IE::Execution(std::move(compliation->object)));
+  (*execution)->object.reset(new IE::Execution(compliation->object));
   return (*execution)->object->Init();
 }
 

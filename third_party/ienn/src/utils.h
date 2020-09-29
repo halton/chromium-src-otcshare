@@ -136,9 +136,9 @@ struct ConcatParams {
 };
 
 struct FullyConnectedParams {
-  int32_t input_batch_size;
+  size_t input_batch_size;
   uint32_t num_units;
-  int32_t input_size;
+  size_t input_size;
   uint32_t bias_num_units;
   uint32_t output_batch_size;
   uint32_t output_num_units;
@@ -158,6 +158,14 @@ struct ResizeBilinearParams {
 
 struct ArgmaxParams {
   int32_t axis;
+};
+
+struct ReshapeParams {
+  std::vector<size_t> new_shape;
+};
+
+struct TransposeParams {
+  std::vector<size_t> permutation;
 };
 
 int32_t GetScalarInt32(ModelInfoPtr model, uint32_t index);
@@ -188,6 +196,14 @@ int32_t GetResizeBilinearParams(ModelInfoPtr model,
 
 int32_t GetArgmaxParams(ModelInfoPtr model, const Operation&, ArgmaxParams&);
 
+int32_t GetReshapeParams(ModelInfoPtr model,
+                         const Operation& operation,
+                         ReshapeParams& params);
+
+int32_t GetTransposeParams(ModelInfoPtr model,
+                           const Operation& operation,
+                           const ngraph::Output<ngraph::Node>& input_node,
+                           TransposeParams& params);
 }  // namespace InferenceEngine
 
 #endif  // IE_UTILS_H

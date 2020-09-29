@@ -14,7 +14,7 @@ namespace InferenceEngine {
 
 class Execution {
  public:
-  Execution(std::unique_ptr<Compilation> compilation);
+  Execution(std::shared_ptr<Compilation> compilation);
   ~Execution();
 
   int32_t Init();
@@ -26,7 +26,7 @@ class Execution {
  private:
   bool initialized_;
 
-  std::unique_ptr<Compilation> compilation_;
+  std::shared_ptr<Compilation> compilation_;
   std::vector<OperandValue> input_data_;
   std::vector<OutputData> output_data_;
 
