@@ -177,10 +177,16 @@ int32_t GetElementWiseParams(ModelInfoPtr model,
                              ElementWiseParams&);
 int32_t GetConvParams(ModelInfoPtr model, const Operation&, ConvParams&);
 
+int32_t GetConvParamsV1(ModelInfoPtr model, const Operation&, ConvParams&);
+
 int32_t GetPoolingParams(ModelInfoPtr model,
                          const Operation& operation,
                          const ngraph::Output<ngraph::Node>& input_node,
                          PoolingParams& params);
+
+int32_t GetPoolingParamsV1(ModelInfoPtr model,
+                           const Operation& operation,
+                           PoolingParams& params);
 
 int32_t GetSoftmaxParams(ModelInfoPtr model, const Operation&, SoftmaxParams&);
 

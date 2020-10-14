@@ -33,113 +33,6 @@ inline void CalculateExplicitPadding(bool padding_same,
   }
 }
 
-int32_t GetConvParamsV1(ModelInfoPtr model,
-                        const Operation& operation,
-                        ConvParams& params) {
-  const int32_t type = operation.type;
-  if (!(type == CONV_2D || type == DEPTHWISE_CONV_2D ||
-        type == ATROUS_CONV_2D || type == ATROUS_DEPTHWISE_CONV_2D)) {
-    std::cout << "Operation type " << type << " is not convolution";
-    return BAD_DATA;
-  }
-  const std::vector<uint32_t>& inputs = operation.inputs;
-  const std::vector<uint32_t>& outputs = operation.outputs;
-  params.depthwise =
-      (type == DEPTHWISE_CONV_2D || type == ATROUS_DEPTHWISE_CONV_2D) ? true
-                                                                      : false;
-  bool atrous = (type == ATROUS_CONV_2D || type == ATROUS_DEPTHWISE_CONV_2D)
-                    ? true
-                    : false;
-  const uint32_t output_index = outputs[0];
-  const Operand& output = model->operands[output_index];
-  uint32_t output_batch = output.dimensions[0];
-  uint32_t output_height = output.dimensions[1];
-  uint32_t output_width = output.dimensions[2];
-  uint32_t output_channel = output.dimensions[3];
-  uint32_t index = 0;
-  const uint32_t input_index = inputs[index++];
-  const Operand& input = model->operands[input_index];
-  uint32_t input_batch = input.dimensions[0];
-  uint32_t input_height = input.dimensions[1];
-  uint32_t input_width = input.dimensions[2];
-  uint32_t input_channel = input.dimensions[3];
-
-  const uint32_t filter_idx = inputs[index++];
-  Operand& filter = model->operands[filter_idx];
-  if (params.depthwise) {
-    params.depth_out = filter.dimensions[3];
-  } else {
-    params.depth_out = filter.dimensions[0];
-  }
-  params.filter_height = filter.dimensions[1];
-  params.filter_width = filter.dimensions[2];
-
-  const uint32_t bias_idx = inputs[index++];
-  Operand& bias = model->operands[bias_idx];
-  params.bias_length = bias.dimensions[0];
-
-  bool implicit_padding;
-  int32_t padding_code;
-  if ((!params.depthwise && inputs.size() == 10) ||
-      (params.depthwise && inputs.size() == 11)) {
-    implicit_padding = false;
-    params.padding_left = GetScalarInt32(model, inputs[index++]);
-    params.padding_right = GetScalarInt32(model, inputs[index++]);
-    params.padding_top = GetScalarInt32(model, inputs[index++]);
-    params.padding_bottom = GetScalarInt32(model, inputs[index++]);
-  } else if ((!params.depthwise && inputs.size() == 7) ||
-             (params.depthwise && inputs.size() == 8)) {
-    implicit_padding = true;
-    padding_code = GetScalarInt32(model, inputs[index++]);
-  } else {
-    std::cout << "Inputs size is incorrect";
-    return BAD_DATA;
-  }
-  if (!atrous) {
-    params.stride_width = GetScalarInt32(model, inputs[index++]);
-    params.stride_height = GetScalarInt32(model, inputs[index++]);
-    params.dilation_width = 1;
-    params.dilation_height = 1;
-  } else {
-    params.dilation_width = GetScalarInt32(model, inputs[index++]);
-    params.dilation_height = GetScalarInt32(model, inputs[index++]);
-    params.stride_width = 1;
-    params.stride_height = 1;
-  }
-  if (params.depthwise) {
-    uint32_t depthwise_multiplier;
-    depthwise_multiplier = GetScalarInt32(model, inputs[index++]);
-    if (depthwise_multiplier != 1) {
-      std::cout << "depthwise_multiplier " << depthwise_multiplier
-                << " is not supported";
-      return error_t::BAD_DATA;
-    }
-
-    if (output_channel != input_channel * depthwise_multiplier) {
-      std::cout
-          << "Failed assertion: outputFeatureChannels " << output_channel
-          << " in IE depthwise convolution descriptor must be multiplie of "
-             "inFeatureChannels "
-          << input_channel;
-      return error_t::BAD_DATA;
-    }
-  }
-  params.fuse_code = GetScalarInt32(model, inputs[index++]);
-
-  if (implicit_padding) {
-    CalculateExplicitPadding(padding_code == PADDING_SAME, input_width,
-                             params.stride_width, params.filter_width,
-                             params.padding_left, params.padding_right,
-                             params.dilation_width);
-    CalculateExplicitPadding(padding_code == PADDING_SAME, input_height,
-                             params.stride_height, params.filter_height,
-                             params.padding_top, params.padding_bottom,
-                             params.dilation_height);
-  }
-
-  return NOT_ERROR;
-}
-
 int32_t GetPoolingParamsV1(ModelInfoPtr model,
                            const Operation& operation,
                            PoolingParams& params) {
@@ -151,18 +44,8 @@ int32_t GetPoolingParamsV1(ModelInfoPtr model,
   const std::vector<uint32_t>& inputs = operation.inputs;
   const std::vector<uint32_t>& outputs = operation.outputs;
   const uint32_t output_index = outputs[0];
-  const Operand& output = model->operands[output_index];
-  params.output_batch = output.dimensions[0];
-  params.output_height = output.dimensions[1];
-  params.output_width = output.dimensions[2];
-  params.output_channel = output.dimensions[3];
   int32_t i = 0;
   const int32_t input_index = inputs[i++];
-  const Operand& input = model->operands[input_index];
-  params.input_batch = input.dimensions[0];
-  params.input_height = input.dimensions[1];
-  params.input_width = input.dimensions[2];
-  params.input_channel = input.dimensions[3];
 
   bool implicit_padding;
   int32_t padding_code;
@@ -244,6 +127,134 @@ int32_t GetElementWiseParams(ModelInfoPtr model,
   return NOT_ERROR;
 }
 
+int32_t GetConvParamsV1(ModelInfoPtr model,
+                        const Operation& operation,
+                        ConvParams& params) {
+  const int32_t type = operation.type;
+  if (!(type == CONV_2D || type == DEPTHWISE_CONV_2D ||
+        type == ATROUS_CONV_2D || type == ATROUS_DEPTHWISE_CONV_2D)) {
+    std::cout << "Operation type " << type << " is not convolution";
+    return BAD_DATA;
+  }
+  const std::vector<uint32_t>& inputs = operation.inputs;
+  const std::vector<uint32_t>& outputs = operation.outputs;
+  params.depthwise =
+      (type == DEPTHWISE_CONV_2D || type == ATROUS_DEPTHWISE_CONV_2D) ? true
+                                                                      : false;
+
+  // The index of layout for Conv2D is 10, Depthwise Conv2D and Groupu Conv2d is
+  // 11 because there is depthwise before it.
+  uint32_t layout_index = 10;
+  if (params.depthwise) {
+    layout_index = 11;
+  }
+  if (layout_index >= inputs.size()) {
+    params.nhwc_layout = true;
+  } else {
+    params.nhwc_layout =
+        GetScalarInt32(model, inputs[layout_index]) == 1 ? false : true;
+  }
+
+  bool atrous = (type == ATROUS_CONV_2D || type == ATROUS_DEPTHWISE_CONV_2D)
+                    ? true
+                    : false;
+  const uint32_t output_index = outputs[0];
+  const Operand& output = model->operands[output_index];
+  uint32_t output_batch = output.dimensions[0];
+  uint32_t output_height =
+      params.nhwc_layout ? output.dimensions[1] : output.dimensions[2];
+  uint32_t output_width =
+      params.nhwc_layout ? output.dimensions[2] : output.dimensions[3];
+  uint32_t output_channel =
+      params.nhwc_layout ? output.dimensions[3] : output.dimensions[1];
+  uint32_t index = 0;
+  const uint32_t input_index = inputs[index++];
+  const Operand& input = model->operands[input_index];
+  uint32_t input_batch = input.dimensions[0];
+  uint32_t input_height =
+      params.nhwc_layout ? input.dimensions[1] : input.dimensions[2];
+  uint32_t input_width =
+      params.nhwc_layout ? input.dimensions[2] : input.dimensions[3];
+  uint32_t input_channel =
+      params.nhwc_layout ? input.dimensions[3] : input.dimensions[1];
+
+  const uint32_t filter_idx = inputs[index++];
+  Operand& filter = model->operands[filter_idx];
+  if (params.depthwise) {
+    params.depth_out = filter.dimensions[3];
+  } else {
+    params.depth_out = filter.dimensions[0];
+  }
+  params.filter_height = filter.dimensions[1];
+  params.filter_width = filter.dimensions[2];
+
+  const uint32_t bias_idx = inputs[index++];
+  Operand& bias = model->operands[bias_idx];
+  params.bias_length = bias.dimensions[0];
+
+  bool implicit_padding;
+  int32_t padding_code;
+  if ((!params.depthwise && (inputs.size() == 10 || inputs.size() == 11)) ||
+      (params.depthwise && (inputs.size() == 11 || inputs.size() == 12))) {
+    implicit_padding = false;
+    params.padding_left = GetScalarInt32(model, inputs[index++]);
+    params.padding_right = GetScalarInt32(model, inputs[index++]);
+    params.padding_top = GetScalarInt32(model, inputs[index++]);
+    params.padding_bottom = GetScalarInt32(model, inputs[index++]);
+  } else if ((!params.depthwise &&
+              (inputs.size() == 7 || inputs.size() == 8)) ||
+             (params.depthwise && (inputs.size() == 8 || inputs.size() == 9))) {
+    implicit_padding = true;
+    padding_code = GetScalarInt32(model, inputs[index++]);
+  } else {
+    std::cout << "Inputs size is incorrect";
+    return BAD_DATA;
+  }
+  if (!atrous) {
+    params.stride_width = GetScalarInt32(model, inputs[index++]);
+    params.stride_height = GetScalarInt32(model, inputs[index++]);
+    params.dilation_width = 1;
+    params.dilation_height = 1;
+  } else {
+    params.dilation_width = GetScalarInt32(model, inputs[index++]);
+    params.dilation_height = GetScalarInt32(model, inputs[index++]);
+    params.stride_width = 1;
+    params.stride_height = 1;
+  }
+  if (params.depthwise) {
+    uint32_t depthwise_multiplier;
+    depthwise_multiplier = GetScalarInt32(model, inputs[index++]);
+    if (depthwise_multiplier != 1) {
+      std::cout << "depthwise_multiplier " << depthwise_multiplier
+                << " is not supported";
+      return error_t::BAD_DATA;
+    }
+
+    if (output_channel != input_channel * depthwise_multiplier) {
+      std::cout
+          << "Failed assertion: outputFeatureChannels " << output_channel
+          << " in IE depthwise convolution descriptor must be multiplie of "
+             "inFeatureChannels "
+          << input_channel;
+      return error_t::BAD_DATA;
+    }
+  }
+  params.fuse_code = GetScalarInt32(model, inputs[index++]);
+
+  if (implicit_padding) {
+    CalculateExplicitPadding(padding_code == PADDING_SAME, input_width,
+                             params.stride_width, params.filter_width,
+                             params.padding_left, params.padding_right,
+                             params.dilation_width);
+    CalculateExplicitPadding(padding_code == PADDING_SAME, input_height,
+                             params.stride_height, params.filter_height,
+                             params.padding_top, params.padding_bottom,
+                             params.dilation_height);
+  }
+
+  return NOT_ERROR;
+}
+
 int32_t GetConvParams(ModelInfoPtr model,
                       const Operation& operation,
                       ConvParams& params) {
@@ -316,6 +327,70 @@ int32_t GetConvParams(ModelInfoPtr model,
   return NOT_ERROR;
 }
 
+int32_t GetPoolingParamsV1(ModelInfoPtr model,
+                           const Operation& operation,
+                           PoolingParams& params) {
+  const int32_t type = operation.type;
+  if (!(type == AVERAGE_POOL_2D || type == MAX_POOL_2D)) {
+    std::cout << "Operation type " << type << " is not pooling";
+    return BAD_DATA;
+  }
+  const std::vector<uint32_t>& inputs = operation.inputs;
+  const std::vector<uint32_t>& outputs = operation.outputs;
+  uint32_t layout_index = 10;
+  if (layout_index >= inputs.size()) {
+    params.nhwc_layout = true;
+  } else {
+    params.nhwc_layout =
+        GetScalarInt32(model, inputs[layout_index]) == 1 ? false : true;
+  }
+  const uint32_t output_index = outputs[0];
+  const Operand& output = model->operands[output_index];
+  params.output_height =
+      params.nhwc_layout ? output.dimensions[1] : output.dimensions[2];
+  params.output_width =
+      params.nhwc_layout ? output.dimensions[2] : output.dimensions[3];
+  int32_t i = 0;
+  const int32_t input_index = inputs[i++];
+  const Operand& input = model->operands[input_index];
+  params.input_height =
+      params.nhwc_layout ? input.dimensions[1] : input.dimensions[2];
+  params.input_width =
+      params.nhwc_layout ? input.dimensions[2] : input.dimensions[3];
+
+  bool implicit_padding;
+  int32_t padding_code;
+  if (inputs.size() == 10 || inputs.size() == 11) {
+    implicit_padding = false;
+    params.padding_left = GetScalarInt32(model, inputs[i++]);
+    params.padding_right = GetScalarInt32(model, inputs[i++]);
+    params.padding_top = GetScalarInt32(model, inputs[i++]);
+    params.padding_bottom = GetScalarInt32(model, inputs[i++]);
+  } else if (inputs.size() == 7 || inputs.size() == 8) {
+    implicit_padding = true;
+    padding_code = GetScalarInt32(model, inputs[i++]);
+  } else {
+    std::cout << "  inputs size is incorrect";
+    return BAD_DATA;
+  }
+  params.stride_width = GetScalarInt32(model, inputs[i++]);
+  params.stride_height = GetScalarInt32(model, inputs[i++]);
+  params.filter_width = GetScalarInt32(model, inputs[i++]);
+  params.filter_height = GetScalarInt32(model, inputs[i++]);
+  params.fuse_code = GetScalarInt32(model, inputs[i++]);
+
+  // Setup paddings.
+  if (implicit_padding) {
+    CalculateExplicitPadding(padding_code == PADDING_SAME, params.input_width,
+                             params.stride_width, params.filter_width,
+                             params.padding_left, params.padding_right);
+    CalculateExplicitPadding(padding_code == PADDING_SAME, params.input_height,
+                             params.stride_height, params.filter_height,
+                             params.padding_top, params.padding_bottom);
+  }
+  return NOT_ERROR;
+}
+
 int32_t GetPoolingParams(ModelInfoPtr model,
                          const Operation& operation,
                          const ngraph::Output<ngraph::Node>& input_node,
@@ -326,11 +401,6 @@ int32_t GetPoolingParams(ModelInfoPtr model,
   // The index of layout for polling is 10.
   uint32_t layout_index = 10;
   const std::vector<uint32_t>& inputs = operation.inputs;
-  // This is to get params for V1.
-  if (layout_index >= inputs.size()) {
-    params.nhwc_layout = true;
-    return GetPoolingParamsV1(model, operation, params);
-  }
   params.nhwc_layout =
       GetScalarInt32(model, inputs[layout_index]) == 0 ? true : false;
 
@@ -455,24 +525,28 @@ int32_t GetResizeBilinearParams(ModelInfoPtr model,
     return BAD_DATA;
   }
   const std::vector<uint32_t>& inputs = operation.inputs;
-  if (inputs.size() != 3 && inputs.size() != 4) {
+
+  if (inputs.size() < 3 || inputs.size() > 5) {
     std::cout << "Inputs size is wrong " << inputs.size();
     return BAD_DATA;
   }
+
+  if (inputs.size() < 5) {
+    params.nhwc_layout = true;
+  } else {
+    params.nhwc_layout = GetScalarInt32(model, inputs[4]) == 1 ? false : true;
+  }
+
   const Operand& input = model->operands[inputs[0]];
   if (input.dimensions.size() != 4) {
     std::cout << "Input must be a 4-D tensor";
     return BAD_DATA;
   }
-  params.height = input.dimensions[1];
-  params.width = input.dimensions[2];
   params.new_height = GetScalarInt32(model, inputs[1]);
   params.new_width = GetScalarInt32(model, inputs[2]);
-  params.y_scale = params.new_height / params.height;
-  params.x_scale = params.new_width / params.width;
 
   params.align_corners = false;
-  if (inputs.size() == 4) {
+  if (inputs.size() >= 4) {
     params.align_corners = GetScalarInt32(model, inputs[3]) == 0 ? false : true;
   }
 

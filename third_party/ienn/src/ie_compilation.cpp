@@ -192,15 +192,11 @@ int32_t Compilation::Compile() {
     for (auto itr : input_info) {
       itr.second->setPrecision(Precision::FP32);
     }
-
-    OutputsDataMap output_info(network_->getOutputsInfo());
-    for (auto itr : output_info) {
-      itr.second->setPrecision(Precision::FP32);
-    }
   } catch (const std::exception& ex) {
     std::cout << "[IE] exception " << ex.what();
     return error_t::OP_FAILED;
   }
+
   return error_t::NOT_ERROR;
 }
 
@@ -363,7 +359,7 @@ int32_t Compilation::AddConvolution(const Operation& operation) {
   }
   // Setup convolution params.
   ConvParams params;
-  int32_t result = GetConvParams(model_, operation, params);
+  int32_t result = GetConvParamsV1(model_, operation, params);
   if (result != error_t::NOT_ERROR)
     return result;
   try {
@@ -423,7 +419,7 @@ int32_t Compilation::AddConvolution(const Operation& operation) {
     // Setup constants
     size_t bias_rank = model_->operands[bias_index].dimensions.size();
     result =
-        AddConstant(bias_index, bias_rank == 1 ? false : true,
+        AddConstant(bias_index, bias_rank == 1 ? false : params.nhwc_layout,
                     bias_rank == 1 ? SizeVector({1, params.bias_length, 1, 1})
                                    : SizeVector({}));
     if (result != error_t::NOT_ERROR) {
@@ -437,7 +433,7 @@ int32_t Compilation::AddConvolution(const Operation& operation) {
     index_op_map_[output_index] =
         params.nhwc_layout ? TransposeLayout(fused_node, false) : fused_node;
   } catch (const std::exception& ex) {
-    std::cout << "[IE] failed to add pooling layer " << ex.what();
+    std::cout << "[IE] failed to add convolution layer " << ex.what();
     return error_t::OP_FAILED;
   }
   return error_t::NOT_ERROR;
@@ -452,8 +448,7 @@ int32_t Compilation::AddPooling(const Operation& operation) {
   }
   // Setup pooling params.
   PoolingParams params;
-  int32_t result =
-      GetPoolingParams(model_, operation, index_op_map_[input_index], params);
+  int32_t result = GetPoolingParamsV1(model_, operation, params);
   if (result != error_t::NOT_ERROR)
     return result;
   try {
@@ -462,6 +457,7 @@ int32_t Compilation::AddPooling(const Operation& operation) {
                            : index_op_map_[input_index];
     const uint32_t output_index = operation.outputs[0];
     std::shared_ptr<ngraph::Node> pooling_node;
+
     if (operation.type == operation_t::MAX_POOL_2D) {
       pooling_node = std::make_shared<op::v1::MaxPool>(
           pooling_input_node,
@@ -565,7 +561,12 @@ int32_t Compilation::AddSoftmax(const Operation& operation) {
   // For new Spec, it only support 2-D input tensor along axis 1.
   auto shape = index_op_map_[input_index].get_shape();
   // Only Android NNAPI support 4 rank to pass android test case.
-  size_t axis = shape.size() == 4 ? 3 : 1;
+  size_t axis;
+  if (operation.inputs.size() > 2) {
+    axis = GetScalarInt32(model_, operation.inputs[2]);
+  } else {
+    axis = shape.size() == 4 ? 3 : 1;
+  }
   try {
     auto softmax_node =
         std::make_shared<op::v1::Softmax>(index_op_map_[input_index], axis);
@@ -697,11 +698,9 @@ int32_t Compilation::AddFullyConnectedV1(const Operation& operation) {
   try {
     const uint32_t weights_index = operation.inputs[1];
     const uint32_t bias_index = operation.inputs[2];
-    if (index_op_map_.find(weights_index) == index_op_map_.end()) {
-      // Setup constants
-      AddConstant(weights_index, true);
-    }
-    AddConstant(bias_index, true);
+    // Setup constants
+    AddConstant(weights_index, false);
+    AddConstant(bias_index, false);
 
     std::vector<size_t> dims{params.input_batch_size, params.input_size};
     // Need to transpose the weights.
@@ -768,12 +767,6 @@ int32_t Compilation::AddArgmax(const Operation& operation) {
   if (result != error_t::NOT_ERROR)
     return error_t::BAD_DATA;
 
-  // Only support NHWC layout for Argmax.
-  if (params.axis != 3) {
-    std::cout << "Only support axis for channel.";
-    return error_t::BAD_DATA;
-  }
-
   const uint32_t input_index = operation.inputs[0];
   if (index_op_map_.find(input_index) == index_op_map_.end()) {
     std::cout << "The layer for operand index " << input_index
@@ -784,7 +777,7 @@ int32_t Compilation::AddArgmax(const Operation& operation) {
     const uint32_t output_index = operation.outputs[0];
     const auto k = op::Constant::create(element::i64, Shape{}, {1});
     auto topk_node = std::make_shared<op::v1::TopK>(
-        index_op_map_[input_index], k->output(0), 3, "max", "value");
+        index_op_map_[input_index], k->output(0), params.axis, "max", "value");
     // output(1) with top k indices for each slice along axis dimension
     index_op_map_[output_index] = topk_node->output(1);
   } catch (const std::exception& ex) {
