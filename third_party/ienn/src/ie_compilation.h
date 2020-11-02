@@ -87,14 +87,15 @@ static short f32tof16(float x) {
   return static_cast<short>(v.u | s);
 }
 
-template <typename T>
-int32_t CloneData(T* dst, const float* src, const std::vector<uint32_t>& dims) {
+template <typename T1, typename T2>
+int32_t CloneData(T1* dst, const T2* src, const std::vector<uint32_t>& dims) {
   size_t size = product(dims);
-  if (std::is_same<T, float>::value || std::is_same<T, int32_t>::value) {
-    const size_t buffer_length = size * sizeof(T);
+  if (std::is_same<T1, float>::value || std::is_same<T1, int32_t>::value ||
+      std::is_same<T1, uint8_t>::value) {
+    const size_t buffer_length = size * sizeof(T1);
     memcpy(static_cast<void*>(dst), static_cast<const void*>(src),
            buffer_length);
-  } else if (std::is_same<T, int16_t>::value) {
+  } else if (std::is_same<T1, int16_t>::value) {
     for (size_t i = 0; i < size; ++i) {
       dst[i] = f32tof16(src[i]);
     }
@@ -104,18 +105,18 @@ int32_t CloneData(T* dst, const float* src, const std::vector<uint32_t>& dims) {
   return error_t::NOT_ERROR;
 }
 
-template <typename T>
-int32_t Reorder(T* dst,
-                const float* src,
+template <typename T1, typename T2>
+int32_t Reorder(T1* dst,
+                const T2* src,
                 const std::vector<uint32_t>& dims,
                 bool nhwc_to_nchw = true) {
-  if (!(std::is_same<T, float>::value || std::is_same<T, int16_t>::value ||
-        std::is_same<T, int32_t>::value)) {
+  if (!(std::is_same<T1, float>::value || std::is_same<T1, int16_t>::value ||
+        std::is_same<T1, int32_t>::value || std::is_same<T1, uint8_t>::value)) {
     std::cout << "Data type is not supported";
     return error_t::BAD_DATA;
   }
   if (dims.size() == 1 || dims.size() == 2) {
-    CloneData<T>(dst, src, dims);
+    CloneData<T1, T2>(dst, src, dims);
   } else if (dims.size() == 3 || dims.size() == 4) {
     // dims is in NHWC
     const bool rank3 = dims.size() == 3;
@@ -140,10 +141,12 @@ int32_t Reorder(T* dst,
               src_index = b * channels * height * width + c * height * width +
                           y * width + x;
             }
-            if (std::is_same<T, float>::value ||
-                std::is_same<T, int32_t>::value) {
+            if (std::is_same<T1, float>::value ||
+                std::is_same<T1, int32_t>::value ||
+                std::is_same<T1, uint8_t>::value) {
               dst[dst_index] = src[src_index];
-            } else if (std::is_same<T, int16_t>::value) {
+            } else if (std::is_same<T1, int16_t>::value &&
+                       std::is_same<T2, float>::value) {
               dst[dst_index] = f32tof16(src[src_index]);
             }
           }
@@ -187,6 +190,8 @@ class Compilation {
   int32_t AddArgmax(const Operation& operation);
   int32_t AddActivation(const Operation& operation);
   int32_t AddTranspose(const Operation& operation);
+  int32_t AddConvert(const Operation& operation);
+  int32_t AddFakequantize(const Operation& operation);
 
  private:
   friend class Execution;

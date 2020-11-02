@@ -55,6 +55,8 @@ typedef enum {
   PRELU = 71,
   ATROUS_CONV_2D = 10003,
   ATROUS_DEPTHWISE_CONV_2D = 10004,
+  FAKE_QUANTIZE = 20000,
+  CONVERT = 30000,
 } operation_t;
 
 // Fused activation function types.

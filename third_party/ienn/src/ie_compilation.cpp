@@ -38,16 +38,16 @@ std::vector<size_t> ConvertDims(const std::vector<uint32_t>& dimensions) {
   return dims;
 }
 
-template <typename T>
-int32_t CopyDataToBuffer(T* dst,
-                         const float* src,
+template <typename T1, typename T2>
+int32_t CopyDataToBuffer(T1* dst,
+                         const T2* src,
                          const std::vector<uint32_t>& dims,
                          bool reorder) {
   uint32_t result;
   if (reorder) {
-    result = Reorder<T>(dst, src, dims);
+    result = Reorder<T1, T2>(dst, src, dims);
   } else {
-    result = CloneData<T>(dst, src, dims);
+    result = CloneData<T1, T2>(dst, src, dims);
   }
   return result;
 }
@@ -63,9 +63,11 @@ Shape CreateShape(const std::vector<uint32_t>& dimensions) {
 
 // Transpose NHWC <=> NCHW.
 ngraph::Output<ngraph::Node> TransposeLayout(ngraph::Output<ngraph::Node> node,
-                                             bool nhwc_to_nchw) {
-  AxisVector order =
-      nhwc_to_nchw ? AxisVector{0, 3, 1, 2} : AxisVector{0, 2, 3, 1};
+                                             bool nhwc_to_nchw,
+                                             bool nghwc_to_ngchw = false) {
+  AxisVector order = nghwc_to_ngchw ? AxisVector{0, 1, 4, 2, 3}
+                                    : nhwc_to_nchw ? AxisVector{0, 3, 1, 2}
+                                                   : AxisVector{0, 2, 3, 1};
   const auto order_node =
       op::Constant::create(element::i64, Shape{order.size()}, order);
   auto transpose_node = std::make_shared<op::v1::Transpose>(node, order_node);
@@ -143,6 +145,8 @@ int32_t Compilation::Compile() {
       result = AddPooling(operation);
     } else if (type == operation_t::SOFTMAX) {
       result = AddSoftmax(operation);
+    } else if (type == operation_t::CONVERT) {
+      result = AddConvert(operation);
     } else if (type == operation_t::RESHAPE) {
       result = AddReshape(operation);
     } else if (type == operation_t::CONCATENATION) {
@@ -159,6 +163,8 @@ int32_t Compilation::Compile() {
       result = AddActivation(operation);
     } else if (type == operation_t::TRANSPOSE) {
       result = AddTranspose(operation);
+    } else if (type == operation_t::FAKE_QUANTIZE) {
+      result = AddFakequantize(operation);
     } else {
       std::cout << "Operation type " << type << " is not supported."
                 << std::endl;
@@ -186,15 +192,11 @@ int32_t Compilation::Compile() {
     for (auto itr : input_info) {
       itr.second->setPrecision(Precision::FP32);
     }
-
-    OutputsDataMap output_info(network_->getOutputsInfo());
-    for (auto itr : output_info) {
-      itr.second->setPrecision(Precision::FP32);
-    }
   } catch (const std::exception& ex) {
     std::cout << "[IE] exception " << ex.what();
     return error_t::OP_FAILED;
   }
+
   return error_t::NOT_ERROR;
 }
 
@@ -234,28 +236,48 @@ int32_t Compilation::AddConstant(uint32_t index,
                                  bool reorder,
                                  std::vector<size_t> specified_dims) {
   try {
+    if (index_op_map_.find(index) != index_op_map_.end()) {
+      std::cout << "constant has been already created" << std::endl;
+      return error_t::NOT_ERROR;
+    }
     const Operand& operand = model_->operands[index];
     SizeVector dims = reorder ? ConvertDims(operand.dimensions)
                               : CreateShape(operand.dimensions);
-    // GNA also only support FP32 representing with PREFER_ULTRA_LOW_POWER.
-    bool fp32_precision = preference_ != PREFER_LOW_POWER;
+    bool fp16_precision = preference_ == PREFER_LOW_POWER;
     Blob::Ptr blob;
-    if (fp32_precision) {
-      // GNA only accepts FP32 precision, cpu/gpu use FP32 currently.
-      blob = make_shared_blob<float>({Precision::FP32, dims, Layout::ANY});
-    } else {
+
+    if (fp16_precision) {
       // MYRIAD only accepts FP16 precision.
       blob = make_shared_blob<int16_t>({Precision::FP16, dims, Layout::ANY});
+    } else if (operand.type == data_t::TENSOR_FLOAT32) {
+      // GNA only accepts FP32 precision, cpu/gpu use FP32 currently.
+      blob = make_shared_blob<float>({Precision::FP32, dims, Layout::ANY});
+    } else if (operand.type == data_t::TENSOR_QUANT8_ASYMM) {
+      // cpu quant model accepts uint8 weights
+      blob = make_shared_blob<uint8_t>({Precision::U8, dims, Layout::ANY});
     }
     blob->allocate();
-    const float* src =
-        reinterpret_cast<const float*>(model_->values[index].buffer);
+
     std::shared_ptr<op::Constant> constant_node;
     uint32_t result;
     SizeVector const_dims = specified_dims.size() == 0 ? dims : specified_dims;
-    if (fp32_precision) {
+    if (fp16_precision) {
+      const float* src =
+          reinterpret_cast<const float*>(model_->values[index].buffer);
+      int16_t* dst = blob->buffer().as<int16_t*>();
+      result = CopyDataToBuffer<int16_t, float>(dst, src, operand.dimensions,
+                                                reorder);
+      if (result != error_t::NOT_ERROR) {
+        return result;
+      }
+      constant_node = std::make_shared<op::Constant>(
+          element::f16, Shape(const_dims), blob->buffer().as<int16_t*>());
+    } else if (operand.type == data_t::TENSOR_FLOAT32) {
+      const float* src =
+          reinterpret_cast<const float*>(model_->values[index].buffer);
       float* dst = blob->buffer().as<float*>();
-      result = CopyDataToBuffer<float>(dst, src, operand.dimensions, reorder);
+      result =
+          CopyDataToBuffer<float, float>(dst, src, operand.dimensions, reorder);
       if (result != error_t::NOT_ERROR) {
         return result;
       }
@@ -263,14 +285,17 @@ int32_t Compilation::AddConstant(uint32_t index,
       // e.g. 4D shape will use default NCHW
       constant_node = std::make_shared<op::Constant>(
           element::f32, Shape(const_dims), blob->buffer().as<float*>());
-    } else {
-      int16_t* dst = blob->buffer().as<int16_t*>();
-      result = CopyDataToBuffer<int16_t>(dst, src, operand.dimensions, reorder);
+    } else if (operand.type == data_t::TENSOR_QUANT8_ASYMM) {
+      const uint8_t* src =
+          reinterpret_cast<const uint8_t*>(model_->values[index].buffer);
+      uint8_t* dst = blob->buffer().as<uint8_t*>();
+      result = CopyDataToBuffer<uint8_t, uint8_t>(dst, src, operand.dimensions,
+                                                  reorder);
       if (result != error_t::NOT_ERROR) {
         return result;
       }
       constant_node = std::make_shared<op::Constant>(
-          element::f16, Shape(const_dims), blob->buffer().as<int16_t*>());
+          element::u8, Shape(const_dims), blob->buffer().as<float*>());
     }
     index_op_map_[index] = constant_node->output(0);
   } catch (const std::exception& ex) {
@@ -326,6 +351,7 @@ int32_t Compilation::AddElementwise(const Operation& operation) {
 
 int32_t Compilation::AddConvolution(const Operation& operation) {
   const uint32_t input_index = operation.inputs[0];
+  const Operand& input = model_->operands[input_index];
   if (index_op_map_.find(input_index) == index_op_map_.end()) {
     std::cout << "The layer for operand index " << input_index
               << " is not ready";
@@ -333,7 +359,7 @@ int32_t Compilation::AddConvolution(const Operation& operation) {
   }
   // Setup convolution params.
   ConvParams params;
-  int32_t result = GetConvParams(model_, operation, params);
+  int32_t result = GetConvParamsV1(model_, operation, params);
   if (result != error_t::NOT_ERROR)
     return result;
   try {
@@ -350,14 +376,38 @@ int32_t Compilation::AddConvolution(const Operation& operation) {
         params.nhwc_layout ? TransposeLayout(index_op_map_[input_index], true)
                            : index_op_map_[input_index];
     if (params.depthwise) {
-      SizeVector weights_dims{params.depth_out, 1, 1, params.filter_height,
-                              params.filter_width};
-      AddConstant(weights_index, params.nhwc_layout, weights_dims);
+      if (index_op_map_.find(weights_index) == index_op_map_.end()) {
+        // Setup constants
+        SizeVector weights_dims{params.depth_out, 1, 1, params.filter_height,
+                                params.filter_width};
+        result = AddConstant(weights_index, params.nhwc_layout, weights_dims);
+        if (result != error_t::NOT_ERROR) {
+          return result;
+        }
+      } else {
+        if (params.nhwc_layout) {
+          // transpose the weights from nghwc to ngchw
+          index_op_map_[weights_index] =
+              TransposeLayout(index_op_map_[weights_index], false, true);
+        }
+      }
       conv_node = std::make_shared<op::v1::GroupConvolution>(
           conv_input_node, index_op_map_[weights_index], Strides(strides),
           CoordinateDiff(padBegin), CoordinateDiff(padEnd), Strides(dilations));
     } else {
-      AddConstant(weights_index, params.nhwc_layout);
+      if (index_op_map_.find(weights_index) == index_op_map_.end()) {
+        // Setup constants
+        result = AddConstant(weights_index, params.nhwc_layout);
+        if (result != error_t::NOT_ERROR) {
+          return result;
+        }
+      } else {
+        if (params.nhwc_layout) {
+          // transpose the weights from nhwc to nchw
+          index_op_map_[weights_index] =
+              TransposeLayout(index_op_map_[weights_index], true);
+        }
+      }
       conv_node = std::make_shared<op::v1::Convolution>(
           conv_input_node, index_op_map_[weights_index], Strides(strides),
           CoordinateDiff(padBegin), CoordinateDiff(padEnd), Strides(dilations));
@@ -366,7 +416,16 @@ int32_t Compilation::AddConvolution(const Operation& operation) {
     const uint32_t output_index = operation.outputs[0];
     // Since cldnn doesn't support mixed layout
     // We reshape the bias to 4D NCHW aligned with conv_node
-    AddConstant(bias_index, false, {1, params.bias_length, 1, 1});
+    // Setup constants
+    size_t bias_rank = model_->operands[bias_index].dimensions.size();
+    result =
+        AddConstant(bias_index, bias_rank == 1 ? false : params.nhwc_layout,
+                    bias_rank == 1 ? SizeVector({1, params.bias_length, 1, 1})
+                                   : SizeVector({}));
+    if (result != error_t::NOT_ERROR) {
+      return result;
+    }
+
     auto add_node = std::make_shared<op::v1::Add>(conv_node->output(0),
                                                   index_op_map_[bias_index]);
     auto fused_node =
@@ -374,7 +433,7 @@ int32_t Compilation::AddConvolution(const Operation& operation) {
     index_op_map_[output_index] =
         params.nhwc_layout ? TransposeLayout(fused_node, false) : fused_node;
   } catch (const std::exception& ex) {
-    std::cout << "[IE] failed to add pooling layer " << ex.what();
+    std::cout << "[IE] failed to add convolution layer " << ex.what();
     return error_t::OP_FAILED;
   }
   return error_t::NOT_ERROR;
@@ -389,8 +448,7 @@ int32_t Compilation::AddPooling(const Operation& operation) {
   }
   // Setup pooling params.
   PoolingParams params;
-  int32_t result =
-      GetPoolingParams(model_, operation, index_op_map_[input_index], params);
+  int32_t result = GetPoolingParamsV1(model_, operation, params);
   if (result != error_t::NOT_ERROR)
     return result;
   try {
@@ -399,6 +457,7 @@ int32_t Compilation::AddPooling(const Operation& operation) {
                            : index_op_map_[input_index];
     const uint32_t output_index = operation.outputs[0];
     std::shared_ptr<ngraph::Node> pooling_node;
+
     if (operation.type == operation_t::MAX_POOL_2D) {
       pooling_node = std::make_shared<op::v1::MaxPool>(
           pooling_input_node,
@@ -422,6 +481,53 @@ int32_t Compilation::AddPooling(const Operation& operation) {
         params.nhwc_layout ? TransposeLayout(fused_node, false) : fused_node;
   } catch (const std::exception& ex) {
     std::cout << "[IE] failed to add pooling layer " << ex.what();
+    return error_t::OP_FAILED;
+  }
+  return error_t::NOT_ERROR;
+}
+
+int32_t Compilation::AddConvert(const Operation& operation) {
+  const uint32_t input_index = operation.inputs[0];
+  if (index_op_map_.find(input_index) == index_op_map_.end()) {
+    // Setup constants
+    if (model_->values.find(input_index) != model_->values.end()) {
+      int32_t result = AddConstant(input_index, false);
+      if (result != error_t::NOT_ERROR) {
+        return result;
+      }
+    } else {
+      std::cout << "The layer for operand index " << input_index
+                << " is not ready";
+      return error_t::BAD_DATA;
+    }
+  }
+
+  const uint32_t output_index = operation.outputs[0];
+  int32_t output_type = model_->operands[output_index].type;
+  ngraph::element::Type destination_type;
+  switch (output_type) {
+    case data_t::FLOAT32:
+      destination_type = element::f32;
+      break;
+    case data_t::INT32:
+      destination_type = element::i32;
+      break;
+    case data_t::TENSOR_QUANT8_ASYMM_SIGNED:
+      destination_type = element::i8;
+      break;
+    case data_t::TENSOR_QUANT8_ASYMM:
+      destination_type = element::u8;
+      break;
+    default:
+      destination_type = element::f32;
+  }
+
+  try {
+    auto convert_node = std::make_shared<op::v0::Convert>(
+        index_op_map_[input_index], destination_type);
+    index_op_map_[output_index] = convert_node->output(0);
+  } catch (const std::exception& ex) {
+    std::cout << "[IE] failed to add Convert node " << ex.what() << std::endl;
     return error_t::OP_FAILED;
   }
   return error_t::NOT_ERROR;
@@ -455,7 +561,12 @@ int32_t Compilation::AddSoftmax(const Operation& operation) {
   // For new Spec, it only support 2-D input tensor along axis 1.
   auto shape = index_op_map_[input_index].get_shape();
   // Only Android NNAPI support 4 rank to pass android test case.
-  size_t axis = shape.size() == 4 ? 3 : 1;
+  size_t axis;
+  if (operation.inputs.size() > 2) {
+    axis = GetScalarInt32(model_, operation.inputs[2]);
+  } else {
+    axis = shape.size() == 4 ? 3 : 1;
+  }
   try {
     auto softmax_node =
         std::make_shared<op::v1::Softmax>(index_op_map_[input_index], axis);
@@ -516,7 +627,6 @@ int32_t Compilation::AddConcatenation(const Operation& operation) {
     }
     input_nodes.push_back(index_op_map_[input_index].get_node_shared_ptr());
   }
-
   const uint32_t output_index = operation.outputs[0];
   try {
     auto concat_node =
@@ -588,8 +698,10 @@ int32_t Compilation::AddFullyConnectedV1(const Operation& operation) {
   try {
     const uint32_t weights_index = operation.inputs[1];
     const uint32_t bias_index = operation.inputs[2];
-    AddConstant(weights_index, true);
-    AddConstant(bias_index, true);
+    // Setup constants
+    AddConstant(weights_index, false);
+    AddConstant(bias_index, false);
+
     std::vector<size_t> dims{params.input_batch_size, params.input_size};
     // Need to transpose the weights.
     auto matmul_node = std::make_shared<op::v0::MatMul>(
@@ -655,12 +767,6 @@ int32_t Compilation::AddArgmax(const Operation& operation) {
   if (result != error_t::NOT_ERROR)
     return error_t::BAD_DATA;
 
-  // Only support NHWC layout for Argmax.
-  if (params.axis != 3) {
-    std::cout << "Only support axis for channel.";
-    return error_t::BAD_DATA;
-  }
-
   const uint32_t input_index = operation.inputs[0];
   if (index_op_map_.find(input_index) == index_op_map_.end()) {
     std::cout << "The layer for operand index " << input_index
@@ -671,7 +777,7 @@ int32_t Compilation::AddArgmax(const Operation& operation) {
     const uint32_t output_index = operation.outputs[0];
     const auto k = op::Constant::create(element::i64, Shape{}, {1});
     auto topk_node = std::make_shared<op::v1::TopK>(
-        index_op_map_[input_index], k->output(0), 3, "max", "value");
+        index_op_map_[input_index], k->output(0), params.axis, "max", "value");
     // output(1) with top k indices for each slice along axis dimension
     index_op_map_[output_index] = topk_node->output(1);
   } catch (const std::exception& ex) {
@@ -739,6 +845,40 @@ int32_t Compilation::AddTranspose(const Operation& operation) {
       std::make_shared<op::v1::Transpose>(input_node, order_node);
   const uint32_t output_index = operation.outputs[0];
   index_op_map_[output_index] = transpose_node->output(0);
+  return error_t::NOT_ERROR;
+}
+
+int32_t Compilation::AddFakequantize(const Operation& operation) {
+  const uint32_t input_index = operation.inputs[0];
+  if (index_op_map_.find(input_index) == index_op_map_.end()) {
+    std::cout << "The layer for operand index " << input_index
+              << " is not ready";
+    return error_t::BAD_DATA;
+  }
+  try {
+    const uint32_t input_low_index = operation.inputs[1];
+    const uint32_t input_high_index = operation.inputs[2];
+    const uint32_t output_low_index = operation.inputs[3];
+    const uint32_t output_high_index = operation.inputs[4];
+
+    AddConstant(input_low_index, false);
+    AddConstant(input_high_index, false);
+    AddConstant(output_low_index, false);
+    AddConstant(output_high_index, false);
+
+    size_t levels = GetScalarInt32(model_, operation.inputs[5]);
+
+    auto fakequantize_node = std::make_shared<op::v0::FakeQuantize>(
+        index_op_map_[input_index], index_op_map_[input_low_index],
+        index_op_map_[input_high_index], index_op_map_[output_low_index],
+        index_op_map_[output_high_index], levels);
+
+    const uint32_t output_index = operation.outputs[0];
+    index_op_map_[output_index] = fakequantize_node->output(0);
+  } catch (const std::exception& ex) {
+    std::cout << "[IE] failed to add fakequantize layer " << ex.what();
+    return error_t::OP_FAILED;
+  }
   return error_t::NOT_ERROR;
 }
 

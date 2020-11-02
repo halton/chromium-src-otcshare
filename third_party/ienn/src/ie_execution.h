@@ -33,7 +33,6 @@ class Execution {
   std::unique_ptr<InferRequest> infer_request_;
   std::unique_ptr<ExecutableNetwork> execution_;
   std::unique_ptr<Core> ie_core_;
-
   DISALLOW_COPY_AND_ASSIGN(Execution);
 };
 
