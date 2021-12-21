@@ -21,6 +21,7 @@
     "MediaKeySession",
     "FileWriter",
     "GPUDevice",
+    "MLContext",
     "HID",
     "HIDDevice",
     "IdleDetector",

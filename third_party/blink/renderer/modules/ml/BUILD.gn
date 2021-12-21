@@ -17,6 +17,8 @@ blink_modules_sources("ml") {
     "navigator_ml.cc",
     "navigator_ml.h",
   ]
-
-  deps = [ "//components/ml/mojom:mojom_blink" ]
+  deps = [
+    "//components/ml/mojom:mojom_blink",
+    "//third_party/blink/renderer/modules/ml/webnn",
+  ]
 }
