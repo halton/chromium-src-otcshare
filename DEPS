@@ -373,11 +373,11 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling feed
   # and whatever else without interference from each other.
-  'webnn_revision': '2acd85984040a90b87b12f384f42b96f0a9861e0',
+  'webnn_revision': 'ba1e36c52a84f03578e4f028f232812d1f370816',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling feed
   # and whatever else without interference from each other.
-  'gpgmm_revision': '1e5ae00712c8f91e209864027818e26093df9f45',
+  'gpgmm_revision': 'e4484818f2bcdd262add7c9d208edfff2a8f072c',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling feed
   # and whatever else without interference from each other.
@@ -1025,7 +1025,7 @@ deps = {
     Var('junwei_git') + '/webnn-native-1.git' + '@' +  Var('webnn_revision'),
 
   'src/third_party/gpgmm':
-    Var('gpgmm_git') + '/gpgmm.git' + '@' +  Var('gpgmm_revision'),
+    Var('junwei_git') + '/gpgmm.git' + '@' +  Var('gpgmm_revision'),
 
   'src/third_party/libjxl/src':
     Var('chromium_git') + '/external/gitlab.com/wg1/jpeg-xl.git' + '@' + Var('libjxl_revision'),
