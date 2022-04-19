@@ -54,17 +54,18 @@ ScriptPromise MLGraph::computeAsync(ScriptState* script_state,
 }
 
 void MLGraph::OnComputeAsyncCallback(ScriptPromiseResolver* resolver,
-                                     WNNComputeGraphStatus status,
+                                     WNNErrorType type,
                                      const char* message) {
-  switch (status) {
-    case WNNComputeGraphStatus_Success: {
+  switch (type) {
+    case WNNErrorType_NoError: {
       resolver->Resolve();
       break;
     }
 
-    case WNNComputeGraphStatus_Error:
-    case WNNComputeGraphStatus_ContextLost:
-    case WNNComputeGraphStatus_Unknown: {
+    case WNNErrorType_Validation:
+    case WNNErrorType_OutOfMemory:
+    case WNNErrorType_DeviceLost:
+    case WNNErrorType_Unknown: {
       resolver->Reject(MakeGarbageCollected<DOMException>(
           DOMExceptionCode::kOperationError, message));
       break;
