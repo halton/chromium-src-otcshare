@@ -46,7 +46,7 @@ class MLGraph : public WebnnObject<WNNGraph> {
 
  private:
   void OnComputeAsyncCallback(ScriptPromiseResolver* resolver,
-                              WNNComputeGraphStatus status,
+                              WNNErrorType type,
                               const char* message);
   WNNNamedInputs CreateAndPopulateNamedInputs(const MLNamedInputs& inputs);
   WNNNamedOutputs CreateAndPopulateNamedOutputs(const MLNamedOutputs& outputs);
