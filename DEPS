@@ -248,6 +248,7 @@ vars = {
   'boringssl_git': 'https://boringssl.googlesource.com',
   'chromium_git': 'https://chromium.googlesource.com',
   'dawn_git': 'https://dawn.googlesource.com',
+  'webnn_native_git': 'https://github.com/webmachinelearning',
   'gpgmm_git': 'https://github.com/intel',
   'junwei_git': 'https://github.com/fujunwei',
   'pdfium_git': 'https://pdfium.googlesource.com',
@@ -373,7 +374,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling feed
   # and whatever else without interference from each other.
-  'webnn_revision': 'cf5180c728fdbd55cac7b2995948f933e192d284',
+  'webnn_revision': 'b15a7ef9b44922774a369fc829b306267a00ed6e',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling feed
   # and whatever else without interference from each other.
@@ -1022,7 +1023,7 @@ deps = {
     Var('junwei_git') + '/dawn.git' + '@' +  Var('dawn_revision'),
 
   'src/third_party/webnn':
-    Var('junwei_git') + '/webnn-native-1.git' + '@' +  Var('webnn_revision'),
+    Var('webnn_native_git') + '/webnn-native.git' + '@' +  Var('webnn_revision'),
 
   'src/third_party/gpgmm':
     Var('junwei_git') + '/gpgmm.git' + '@' +  Var('gpgmm_revision'),
