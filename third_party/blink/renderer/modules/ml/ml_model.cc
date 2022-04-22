@@ -106,6 +106,7 @@ ScriptPromise MLModel::compute(
   auto* resolver = MakeGarbageCollected<ScriptPromiseResolver>(script_state);
   ScriptPromise promise = resolver->Promise();
 
+#if 0
   // First verifies the sizes of inputs.
   if (input_tensor_name_to_info_.size() != inputs.size()) {
     resolver->Reject(MakeGarbageCollected<DOMException>(
@@ -143,6 +144,7 @@ ScriptPromise MLModel::compute(
       std::move(input_mojo),
       WTF::Bind(&MLModel::OnComputeResult, WrapPersistent(this),
                 WrapPersistent(script_state), WrapPersistent(resolver)));
+#endif
 
   return promise;
 }
@@ -165,6 +167,7 @@ void MLModel::OnComputeResult(
     return;
   }
 
+#if 0
   if (outputs.value().size() != output_tensor_name_to_info_.size()) {
     resolver->Reject(MakeGarbageCollected<DOMException>(
         DOMExceptionCode::kUnknownError,
@@ -261,6 +264,7 @@ void MLModel::OnComputeResult(
   }
 
   resolver->Resolve(std::move(outputs_blink));
+#endif
 }
 
 }  // namespace blink
