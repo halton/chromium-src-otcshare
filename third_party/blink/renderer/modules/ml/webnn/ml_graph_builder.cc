@@ -733,6 +733,7 @@ MLGraph* MLGraphBuilder::build(const MLNamedOperands& outputs) {
   WNNGraph webnn_graph =
       GetProcs().graphBuilderBuild(GetHandle(), webnn_outputs);
   MLGraph* graph = MakeGarbageCollected<MLGraph>(GetContext(), webnn_graph);
+  EnsureFlush();
   return graph;
 }
 
