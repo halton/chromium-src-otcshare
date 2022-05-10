@@ -32,15 +32,15 @@ class WebnnWireServices : public APIChannel {
                     WebNNCmdHelper* helper,
                     std::unique_ptr<TransferBuffer> transfer_buffer)
       : serializer_(webnn_implementation, helper, std::move(transfer_buffer)),
-        wire_client_(webnn_wire::WireClientDescriptor{
+        wire_client_(::webnn::wire::WireClientDescriptor{
             &serializer_,
         }) {}
 
   const WebnnProcTable& GetProcs() const override {
-    return webnn_wire::client::GetProcs();
+    return ::webnn::wire::client::GetProcs();
   }
 
-  webnn_wire::WireClient* wire_client() { return &wire_client_; }
+  ::webnn::wire::WireClient* wire_client() { return &wire_client_; }
   WebnnClientSerializer* serializer() { return &serializer_; }
 
   void Disconnect() override {
@@ -54,7 +54,7 @@ class WebnnWireServices : public APIChannel {
  private:
   bool disconnected_ = false;
   WebnnClientSerializer serializer_;
-  webnn_wire::WireClient wire_client_;
+  ::webnn::wire::WireClient wire_client_;
 };
 
 // Include the auto-generated part of this file. We split this because it means
@@ -108,7 +108,7 @@ gpu::ContextResult WebNNImplementation::Initialize(
   // TODO(senorblanco): Do this only once per process. Doing it once per
   // WebNNImplementation is non-optimal but valid, since the returned
   // procs are always the same.
-  webnnProcSetProcs(&webnn_wire::client::GetProcs());
+  webnnProcSetProcs(&::webnn::wire::client::GetProcs());
 
   return gpu::ContextResult::kSuccess;
 }

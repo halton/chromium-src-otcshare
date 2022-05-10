@@ -352,7 +352,7 @@ source_set("webnn_sources") {
     "//gpu/command_buffer/common:webnn",
     "//third_party/webnn/src/webnn:webnn_proc",
   ]
-  public_deps = [ "//third_party/webnn/src/webnn:webnn_headers" ]
+  public_deps = [ "//third_party/webnn/include/webnn:headers" ]
   sources = [
     "webnn_cmd_helper.cc",
     "webnn_cmd_helper.h",

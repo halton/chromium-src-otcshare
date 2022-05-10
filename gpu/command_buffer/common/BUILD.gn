@@ -235,12 +235,12 @@ source_set("webnn_sources") {
   deps = [
     ":gles2_utils",
     "//base",
-    "//third_party/webnn/src/webnn_wire",
+    "//third_party/webnn/src/webnn/wire:webnn_wire",
   ]
 
   public_deps = [
     ":common",
-    "//third_party/webnn/src/webnn_wire:webnn_wire_headers",
+    "//third_party/webnn/src/webnn/wire:headers",
     "//ui/gl:buildflags",
   ]
 }

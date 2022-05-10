@@ -6,7 +6,7 @@
 #define GPU_COMMAND_BUFFER_CLIENT_WEBNN_IMPLEMENTATION_H_
 
 #include <webnn/webnn.h>
-#include <webnn_wire/WireClient.h>
+#include <webnn/wire/WireClient.h>
 
 #include <memory>
 #include <utility>

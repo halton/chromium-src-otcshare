@@ -4,8 +4,8 @@
 
 #include "gpu/command_buffer/service/webnn_decoder_impl.h"
 
-#include <webnn_native/WebnnNative.h>
-#include <webnn_wire/WireServer.h>
+#include <webnn/native/WebnnNative.h>
+#include <webnn/wire/WireServer.h>
 
 #include <algorithm>
 #include <memory>
@@ -41,7 +41,7 @@ constexpr size_t kWebnnReturnCmdsOffset =
 
 static_assert(kWebnnReturnCmdsOffset < kMaxWireBufferSize, "");
 
-class WireServerCommandSerializer : public webnn_wire::CommandSerializer {
+class WireServerCommandSerializer : public ::webnn::wire::CommandSerializer {
  public:
   explicit WireServerCommandSerializer(DecoderClient* client);
   ~WireServerCommandSerializer() override = default;
@@ -341,9 +341,9 @@ class WebNNDecoderImpl final : public WebNNDecoder {
   // only if not returning an error.
   error::Error current_decoder_error_ = error::kNoError;
 
-  std::unique_ptr<webnn_native::Instance> webnn_instance_;
+  std::unique_ptr<::webnn::native::Instance> webnn_instance_;
 
-  std::unique_ptr<webnn_wire::WireServer> wire_server_;
+  std::unique_ptr<::webnn::wire::WireServer> wire_server_;
   std::unique_ptr<WireServerCommandSerializer> wire_serializer_;
 
 #if defined(WEBNN_ENABLE_GPU_BUFFER)
@@ -385,17 +385,17 @@ WebNNDecoderImpl::WebNNDecoderImpl(
     MemoryTracker* memory_tracker,
     const GpuPreferences& gpu_preferences)
     : WebNNDecoder(client, command_buffer_service),
-      webnn_instance_(new webnn_native::Instance()),
+      webnn_instance_(new ::webnn::native::Instance()),
       wire_serializer_(new WireServerCommandSerializer(client))
 #if defined(WEBNN_ENABLE_GPU_BUFFER)
       ,
       shared_image_manager_(shared_image_manager)
 #endif
 {
-  webnn_wire::WireServerDescriptor descriptor = {};
-  descriptor.procs = &webnn_native::GetProcs();
+  ::webnn::wire::WireServerDescriptor descriptor = {};
+  descriptor.procs = &::webnn::native::GetProcs();
   descriptor.serializer = wire_serializer_.get();
-  wire_server_ = std::make_unique<webnn_wire::WireServer>(descriptor);
+  wire_server_ = std::make_unique<::webnn::wire::WireServer>(descriptor);
 }
 
 WebNNDecoderImpl::~WebNNDecoderImpl() {
