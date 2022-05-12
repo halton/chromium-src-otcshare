@@ -5,7 +5,7 @@
 #ifndef GPU_COMMAND_BUFFER_CLIENT_WEBNN_CLIENT_SERIALIZER_H_
 #define GPU_COMMAND_BUFFER_CLIENT_WEBNN_CLIENT_SERIALIZER_H_
 
-#include <webnn_wire/WireClient.h>
+#include <webnn/wire/WireClient.h>
 
 #include <memory>
 
@@ -21,7 +21,7 @@ namespace webnn {
 class WebNNCmdHelper;
 class WebNNImplementation;
 
-class WebnnClientSerializer : public webnn_wire::CommandSerializer {
+class WebnnClientSerializer : public ::webnn::wire::CommandSerializer {
  public:
   WebnnClientSerializer(WebNNImplementation* client,
                        WebNNCmdHelper* helper,

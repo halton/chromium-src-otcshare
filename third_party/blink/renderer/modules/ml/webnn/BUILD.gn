@@ -31,6 +31,6 @@ blink_modules_sources("webnn") {
   ]
   deps = [
     "//gpu/command_buffer/client:webnn_interface",
-    "//third_party/webnn/src/webnn:webnn_headers",
+    "//third_party/webnn/include/webnn:headers",
   ]
 }

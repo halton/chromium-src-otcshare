@@ -440,7 +440,7 @@ target(link_target_type, "gles2_sources") {
 
   deps += [
     "//third_party/webnn/src/webnn:webnn_proc",
-    "//third_party/webnn/src/webnn_native",
+    "//third_party/webnn/src/webnn/native:webnn_native",
   ]
 
   if (is_mac) {
