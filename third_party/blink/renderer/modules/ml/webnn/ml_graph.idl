@@ -7,4 +7,5 @@
 [
   RuntimeEnabled=MachineLearningNeuralNetwork,
   Exposed=(Window, DedicatedWorker)
-] interface MLOperand {};
+] interface MLGraph {
+};

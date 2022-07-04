@@ -138,7 +138,7 @@ bool Partitions::InitializeOnce() {
 
   static base::NoDestructor<base::PartitionAllocator> buffer_allocator{};
   buffer_allocator->init({
-      base::PartitionOptions::AlignedAlloc::kDisallowed,
+      base::PartitionOptions::AlignedAlloc::kAllowed,
       base::PartitionOptions::ThreadCache::kDisabled,
       base::PartitionOptions::Quarantine::kAllowed,
       base::PartitionOptions::Cookie::kAllowed,
