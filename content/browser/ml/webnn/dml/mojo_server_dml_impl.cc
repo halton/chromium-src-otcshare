@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "content/browser/ml/webnn/mojo_server_dml_impl.h"
+#include "content/browser/ml/webnn/dml/mojo_server_dml_impl.h"
 
 #include "base/memory/ptr_util.h"
-#include "content/browser/ml/webnn/context_dml_impl.h"
+#include "content/browser/ml/webnn/dml/context_dml_impl.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 
 namespace content::webnn {

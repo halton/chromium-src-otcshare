@@ -8,7 +8,7 @@
 #include "mojo/public/cpp/bindings/remote.h"
 
 #if BUILDFLAG(IS_WIN)
-#include "content/browser/ml/webnn/mojo_server_dml_impl.h"
+#include "content/browser/ml/webnn/dml/mojo_server_dml_impl.h"
 #else
 #include "content/browser/ml/webnn/mojo_server_impl.h"
 #endif

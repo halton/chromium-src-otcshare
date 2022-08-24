@@ -1,19 +1,9 @@
-// Copyright 2021 The WebNN-native Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2022 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#ifndef CONTENT_BROWSER_ML_WEBNN_DML_GRAPHDML_H_
-#define CONTENT_BROWSER_ML_WEBNN_DML_GRAPHDML_H_
+#ifndef CONTENT_BROWSER_ML_WEBNN_GRAPH_DML_IMPL_H_
+#define CONTENT_BROWSER_ML_WEBNN_GRAPH_DML_IMPL_H_
 
 #define DML_TARGET_VERSION_USE_LATEST 1
 
@@ -23,12 +13,18 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <algorithm>
 #include "DirectML.h"
 #include "base/memory/read_only_shared_memory_region.h"
 #include "base/memory/shared_memory_mapping.h"
 #include "components/ml/mojom/webnn_graph.mojom.h"
 
+#include "components/ml/mojom/webnn_graph.mojom.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
+
 namespace content::webnn {
+
+namespace {
 
 using namespace Microsoft::WRL;
 using ml::webnn::mojom::BinaryOperandType;
@@ -46,6 +42,8 @@ using ml::webnn::mojom::Pool2dOptions;
 using ml::webnn::mojom::Pool2dOptionsPtr;
 using ml::webnn::mojom::Pool2dType;
 using ml::webnn::mojom::UnaryOperandType;
+
+}  // namespace
 
 class FusionOperators;
 
@@ -97,35 +95,49 @@ struct EdgeInfo final : public EdgeInfoBase {
   uint32_t outputNodeIndex = 0;
 };
 
-class GraphDMLNativeImpl {
+class GraphDMLImpl : public ml::webnn::mojom::Graph {
  public:
-  GraphDMLNativeImpl();
-  ~GraphDMLNativeImpl();
+  ~GraphDMLImpl() override;
+  static void Create(mojo::PendingReceiver<ml::webnn::mojom::Graph> receiver);
 
-  void AddConstant(OperandDescriptorPtr, const std::vector<uint8_t>&);
-  void AddInput(const std::string&, OperandDescriptorPtr);
-  void AddOutput(const std::string&, uint32_t);
+  GraphDMLImpl(const GraphDMLImpl&) = delete;
+  GraphDMLImpl& operator=(const GraphDMLImpl&) = delete;
+
+ protected:
+  GraphDMLImpl();
+
+ private:
+  // ml::webnn::mojom::Graph
+  void AddInput(const std::string&, OperandDescriptorPtr) override;
+  void AddConstant(OperandDescriptorPtr, const std::vector<uint8_t>&) override;
   void AddElementWiseBinary(uint32_t,
                             uint32_t,
                             BinaryOperandType,
-                            OperandDescriptorPtr);
-  void AddConv2d(uint32_t, uint32_t, Conv2dOptionsPtr, OperandDescriptorPtr);
+                            OperandDescriptorPtr) override;
+  void AddClamp(uint32_t input_id,
+                ClampOptionsPtr options,
+                OperandDescriptorPtr desc) override;
+  void AddConv2d(uint32_t input_id,
+                 uint32_t filter_id,
+                 Conv2dOptionsPtr options,
+                 OperandDescriptorPtr desc) override;
+  void AddReshape(uint32_t input_id, OperandDescriptorPtr desc) override;
+  void AddGemm(uint32_t,
+               uint32_t,
+               GemmOptionsPtr,
+               OperandDescriptorPtr) override;
   void AddPool2d(uint32_t input_id,
                  Pool2dOptionsPtr options,
                  Pool2dType type,
-                 OperandDescriptorPtr desc);
-  void AddReshape(uint32_t, OperandDescriptorPtr);
-  void AddUnary(uint32_t, UnaryOperandType, OperandDescriptorPtr);
-  void AddGemm(uint32_t a_id,
-               uint32_t b_id,
-               GemmOptionsPtr options,
-               OperandDescriptorPtr desc);
-  void AddClamp(uint32_t, ClampOptionsPtr, OperandDescriptorPtr);
-  void AddFusionClamp(ClampOptionsPtr options, uint32_t operator_id);
-  BuildResult CompileImpl(
-      const base::flat_map<std::string, uint32_t>& named_operands);
-  ComputeResult ComputeImpl(NamedInputsPtr named_inputs,
-                            NamedOutputsPtr& named_outputs);
+                 OperandDescriptorPtr desc) override;
+  void AddUnary(uint32_t input_id,
+                UnaryOperandType type,
+                OperandDescriptorPtr desc) override;
+  void AddFusionClamp(ClampOptionsPtr options, uint32_t operator_id) override;
+
+  void Build(const base::flat_map<std::string, uint32_t>& named_operands,
+             BuildCallback callback) override;
+  void Compute(NamedInputsPtr named_inputs, ComputeCallback callback) override;
 
   void AddEdgesToThisNode(
       std::vector<std::shared_ptr<EdgeInfoBase>> inputNodes);
@@ -141,8 +153,8 @@ class GraphDMLNativeImpl {
   void TransposeOutputToNhwc(std::shared_ptr<EdgeInfoBase>& inputEdge,
                              const std::vector<UINT>& nchwOutputDims);
 
- private:
   BuildResult Finish();
+  void AddOutput(const std::string&, uint32_t);
 
   // Represents a DirectML device, which is used to create operators, binding
   // tables, command recorders, and other objects.
@@ -214,4 +226,4 @@ class GraphDMLNativeImpl {
 
 }  // namespace content::webnn
 
-#endif  // CONTENT_BROWSER_ML_WEBNN_DML_GRAPHDML_H_
+#endif  // CONTENT_BROWSER_ML_WEBNN_GRAPH_DML_IMPL_H_
