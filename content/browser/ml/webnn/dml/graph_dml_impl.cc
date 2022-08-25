@@ -5,7 +5,6 @@
 #include "content/browser/ml/webnn/dml/graph_dml_impl.h"
 
 #include "base/memory/ptr_util.h"
-#include "content/browser/ml/webnn/dml/GraphDML.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 
 #include "base/logging.h"
@@ -311,7 +310,7 @@ template <typename T>
 std::vector<UINT> ImplicitPadding(const T* options,
                                   const std::vector<UINT>& inputDims,
                                   const std::vector<UINT>& filterDims) {
-  return utils::ComputeImplicitPaddingForAutoPad<T, UINT>(
+  return ComputeImplicitPaddingForAutoPad<T, UINT>(
       options, {inputDims[2], inputDims[3]},
       {filterDims[filterDims.size() - 2], filterDims[filterDims.size() - 1]});
 }
@@ -576,7 +575,7 @@ GraphDMLImpl::GraphDMLImpl()
   //         DXGI_GPU_PREFERENCE::DXGI_GPU_PREFERENCE_UNSPECIFIED;
   // }
   // Set up Direct3D 12.
-  utils::InitD3D12(mCommandList, mCommandQueue, mCommandAllocator, mD3D12Device,
+  InitD3D12(mCommandList, mCommandQueue, mCommandAllocator, mD3D12Device,
                    gpuPreference, true);
 
   // Create the DirectML device.
@@ -1421,7 +1420,7 @@ void GraphDMLImpl::FillUploadResourceAndInputBindings(
     auto input = mInputs[i];
     if (namedInputs.get() == nullptr) {
       if (input->isConstantInput) {
-        offset = utils::RoundUpToMultiple(
+        offset = RoundUpToMultiple(
             offset, (uint64_t)DML_MINIMUM_BUFFER_TENSOR_ALIGNMENT);
         inputBufferBinding[i].Buffer = mInputResource.Get();
         inputBufferBinding[i].Offset = offset;
@@ -1432,7 +1431,7 @@ void GraphDMLImpl::FillUploadResourceAndInputBindings(
       }
     } else {
       if (!input->isConstantInput) {
-        offset = utils::RoundUpToMultiple(
+        offset = RoundUpToMultiple(
             offset, (uint64_t)DML_MINIMUM_BUFFER_TENSOR_ALIGNMENT);
         MemoryInfoPtr memory_info = std::move(namedInputs->inputs[input->name]);
         base::ReadOnlySharedMemoryRegion& shared_memory_region =
@@ -1574,12 +1573,12 @@ void GraphDMLImpl::Build(
   uint64_t constantInputsResourceSize = 0;
   for (auto& input : mInputs) {
     if (input->isConstantInput) {
-      uint64_t offset = utils::RoundUpToMultiple(
+      uint64_t offset = RoundUpToMultiple(
           constantInputsResourceSize,
           (uint64_t)DML_MINIMUM_BUFFER_TENSOR_ALIGNMENT);
       constantInputsResourceSize = offset + input->byteLength;
     } else {
-      uint64_t offset = utils::RoundUpToMultiple(
+      uint64_t offset = RoundUpToMultiple(
           mCommonInputsResourceSize,
           (uint64_t)DML_MINIMUM_BUFFER_TENSOR_ALIGNMENT);
       mCommonInputsResourceSize = offset + input->byteLength;
@@ -1627,7 +1626,7 @@ void GraphDMLImpl::Build(
   mCommandRecorder->RecordDispatch(mCommandList.Get(),
                                    compiledOperatorInitializer.Get(),
                                    mBindingTable.Get());
-  utils::CloseExecuteResetWait(mCommandList, mCommandQueue, mCommandAllocator,
+  CloseExecuteResetWait(mCommandList, mCommandQueue, mCommandAllocator,
                                mD3D12Device);
 
   if (mCommonInputsResourceSize) {
@@ -1655,7 +1654,7 @@ void GraphDMLImpl::Build(
     uint64_t byteLength = reinterpret_cast<const DML_BUFFER_TENSOR_DESC*>(
                               mOutputs[i].outputTensorDESC.Desc)
                               ->TotalTensorSizeInBytes;
-    uint64_t offset = utils::RoundUpToMultiple(
+    uint64_t offset = RoundUpToMultiple(
         mOutputsResourceSize, (uint64_t)DML_MINIMUM_BUFFER_TENSOR_ALIGNMENT);
     MemoryInfo memory_info = {};
     memory_info.byte_offset = offset;
@@ -1753,7 +1752,7 @@ void GraphDMLImpl::Compute(NamedInputsPtr named_inputs,
     size_t byteLength = reinterpret_cast<const DML_BUFFER_TENSOR_DESC*>(
                             mOutputs[i].outputTensorDESC.Desc)
                             ->TotalTensorSizeInBytes;
-    outputOffset = utils::RoundUpToMultiple(
+    outputOffset = RoundUpToMultiple(
         outputOffset, (uint64_t)DML_MINIMUM_BUFFER_TENSOR_ALIGNMENT);
     DML_BUFFER_BINDING buffer_binding;
     buffer_binding.Buffer = mOutputResource.Get();
@@ -1778,7 +1777,7 @@ void GraphDMLImpl::Compute(NamedInputsPtr named_inputs,
   CopyBufferRegion(mCommandList, mOutputResource, mReadBackResource,
                    mOutputsResourceSize, D3D12_RESOURCE_STATE_COPY_SOURCE,
                    false);
-  utils::CloseExecuteResetWait(mCommandList, mCommandQueue, mCommandAllocator,
+  CloseExecuteResetWait(mCommandList, mCommandQueue, mCommandAllocator,
                                mD3D12Device);
 
   D3D12_RANGE tensorBufferRange{0, mOutputsResourceSize};

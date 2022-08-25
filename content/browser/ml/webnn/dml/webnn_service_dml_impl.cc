@@ -2,32 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "content/browser/ml/webnn/webnn_service.h"
+#include "content/browser/ml/webnn/dml/webnn_service_dml_impl.h"
 
 #include "base/no_destructor.h"
-#include "mojo/public/cpp/bindings/remote.h"
-
-#if BUILDFLAG(IS_WIN)
 #include "content/browser/ml/webnn/dml/mojo_server_dml_impl.h"
-#else
-#include "content/browser/ml/webnn/mojo_server_impl.h"
-#endif
 
 namespace content::webnn {
 
-WebnnService::WebnnService(
+// static
+void WebnnServiceDMLImpl::Create(
+    mojo::PendingReceiver<ml::webnn::mojom::WebnnService> receiver) {
+  static base::NoDestructor<WebnnServiceDMLImpl> service{std::move(receiver)};
+}
+
+WebnnServiceDMLImpl::WebnnServiceDMLImpl(
     mojo::PendingReceiver<ml::webnn::mojom::WebnnService> receiver)
     : receiver_(this, std::move(receiver)) {}
 
-WebnnService::~WebnnService() = default;
+WebnnServiceDMLImpl::~WebnnServiceDMLImpl() = default;
 
-void WebnnService::BindMojoServer(
+void WebnnServiceDMLImpl::BindMojoServer(
     mojo::PendingReceiver<ml::webnn::mojom::MojoServer> receiver) {
-#if BUILDFLAG(IS_WIN)
   MojoServerDMLImpl::Create(std::move(receiver));
-#else
-  MojoServerImpl::Create(std::move(receiver));
-#endif
 }
 
 }  // namespace content::webnn

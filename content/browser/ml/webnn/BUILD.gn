@@ -28,12 +28,14 @@ source_set("lib") {
     "dml/mojo_server_dml_impl.cc",
     "dml/mojo_server_dml_impl.h",
     "dml/utils_dml.h",
+    "dml/webnn_service_dml_impl.cc",
+    "dml/webnn_service_dml_impl.h",
     "fusion_operators.cc",
     "fusion_operators.h",
     "mojo_server_impl.cc",
     "mojo_server_impl.h",
-    "webnn_service.cc",
-    "webnn_service.h",
+    "webnn_service_factory.cc",
+    "webnn_service_factory.h",
   ]
 
   deps = [
