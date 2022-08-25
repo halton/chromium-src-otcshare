@@ -26,7 +26,7 @@
 
 #if BUILDFLAG(ENABLE_MOJO_WEBNN_IN_GPU_PROCESS)
 #include "components/ml/mojom/webnn_service.mojom.h"
-#include "content/browser/ml/webnn/webnn_service.h"
+#include "content/browser/ml/webnn/webnn_service_factory.h"
 #endif
 
 namespace content {
@@ -70,8 +70,10 @@ void GpuChildThread::BindServiceInterface(
         FROM_HERE, base::BindOnce(
                        [](mojo::PendingReceiver<ml::webnn::mojom::WebnnService>
                               webnn_receiver) {
-                         static base::NoDestructor<webnn::WebnnService> service{
-                             std::move(webnn_receiver)};
+                         //  static base::NoDestructor<webnn::WebnnService>
+                         //  service{
+                         //      std::move(webnn_receiver)};
+                         webnn::CreateWebNNService(std::move(webnn_receiver));
                        },
                        std::move(webnn_receiver)));
     return;
